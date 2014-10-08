@@ -53,7 +53,7 @@ handler::~handler() {
 	}
 }
 
-void foreach_handlers(const struct command_msg *msg, std::function<void(pair<const uint32_t, bc::handler*>&)> f) {
+void foreach_handlers(const struct command_msg *msg, std::function<void(pair<const uint32_t, unique_ptr<bc::handler> >&)> f) {
 	uint32_t target_cnt = ntoh(msg->target_cnt);
 	if (target_cnt == 1 && msg->targets[0] == BROADCAST_TARGET) {
 		for_each(bc::g_active_handlers.begin(), bc::g_active_handlers.end(), f);
@@ -102,19 +102,18 @@ void handler::handle_message_recv(const struct command_msg *msg) {
 		state |= SEND_MESSAGE;
 	} else if (msg->command == COMMAND_SEND_MSG) {
 		uint32_t message_id = ntoh(msg->message_id);
-		g_log<DEBUG>("Attempting to send command message", message_id);
 		auto it = g_messages[this->id].find(message_id);
 		if (it == g_messages[this->id].end()) {
 			g_log<ERROR>("invalid message id", message_id);
 		} else {
 			wrapped_buffer<uint8_t> packed(it->second.get_buffer());
-			foreach_handlers(msg, [&](pair<const uint32_t, bc::handler*> p) {
+			foreach_handlers(msg, [&](pair<const uint32_t, unique_ptr<bc::handler> > &p) {
 					p.second->append_for_write(packed);
 				});
 		}
 	} else if (msg->command == COMMAND_DISCONNECT) {
 		g_log<DEBUG>("disconnect command received");
-		foreach_handlers(msg, [](pair<const uint32_t, bc::handler*> p) {
+		foreach_handlers(msg, [](pair<const uint32_t, unique_ptr<bc::handler> > &p) {
 				p.second->disconnect();
 			});
 	} else {
@@ -238,7 +237,7 @@ void handler::receive_payload() {
 
 void handler::do_read(ev::io &watcher, int /* revents */) {
 	ssize_t r(1);
-	while(r > 0) { 
+	while(r > 0 && read_queue.hungry()) { 
 		while (r > 0 && read_queue.hungry()) {
 			pair<int,bool> res(read_queue.do_read(watcher.fd));
 			r = res.first;
@@ -269,7 +268,6 @@ void handler::do_read(ev::io &watcher, int /* revents */) {
 				cerr << "inconceivable!" << endl;
 				break;
 			}
-			break;
 		}
 	}
 }
