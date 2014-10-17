@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
 	const char *config_file = cfg->lookup("version").getSourceFile();
 
 	string g_logpath = (const char*)cfg->lookup("verbatim.logpath") ;
-	string filename = g_logpath + "/" + "verbatim.seed";
+	string filename = g_logpath + "/" + "verbatim.log";
 
 	for(;;) {
 
@@ -331,13 +331,24 @@ int main(int argc, char *argv[]) {
 			while(true) {
 				if (lastpid != child) {
 					time_t now = time(NULL);
-					if (now - start_time >= 60*60) {
+					/* Rules for proceeding to next start time:
+					 * Last must start have been 15 minutes ago
+					 * and should repeat every 4 hours on the 
+					 * 17th minute
+					 */
+					const time_t period = 240*60;
+					const time_t offset = 17*60;
+					const time_t minim = 10*60;
+					time_t next = ((start_time+period-offset-1) / period)*period + offset;
+					if (next - start_time <= minim) next += period;
+					if (now >= next) {
 						cerr << "Manually killing getaddr" << endl;
 						if (kill(child, SIGTERM) < 0) {
 							cerr << "Could not send SIGTERM to " << child << endl;
 						}
 					}
-					sleep(60*60 - (now - start_time));
+					cerr << "Sleeping for " << (next-now)/60 << " minutes" << endl;
+					sleep(next - now);
 				} else {
 					break;
 				}
