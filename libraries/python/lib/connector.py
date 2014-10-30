@@ -150,7 +150,9 @@ class command_msg(message):
     def repack(self):
         if (len(self.targets_) > 0):
             packstr = '>BII{0}I'.format(len(self.targets_));
-            tl = map(socket.htonl, self.targets_)
+            #tl = map(socket.htonl, self.targets_)
+            tl = self.targets_
+            #print tl
             return pack(packstr, self.command_, self.message_id_, len(self.targets_), *tl);
         else:
             return pack('>BII', self.command_, self.message_id_, 0)

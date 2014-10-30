@@ -159,5 +159,19 @@ type_to_obj = {
 	log_types.ERROR : error_log,
 	log_types.BITCOIN : bitcoin_log,
 	log_types.BITCOIN_MSG : bitcoin_msg_log,
-	log_types.CONNECTOR : bitcoin_connector_log
+	log_types.CONNECTOR : connector_log
 }
+
+def logs_from_stream(fp):
+    import sys
+    while fp:
+        length = fp.read(4)
+        if not length: break
+        length, = unpack('>I', length)
+        record = fp.read(length)
+        if not len(record) == length:
+            print >> sys.stderr, 'incomplete read'
+            continue
+        sid, log_type, timestamp, rest = log.deserialize_parts(record)
+        logg = type_to_obj[log_type].deserialize(sid, timestamp, rest)
+        yield logg
