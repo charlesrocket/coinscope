@@ -20,29 +20,28 @@ def pass_one_and_two(ts):
     trimfn = prepare_snippets(ts)
     ipmap, addrmap = parse_addrprobe_pass1(trimfn) # Generates a list of good IPs, stores in ipmap,addrmap
     relevantaddrs = parse_addrprobe_pass2(trimfn, ipmap, addrmap) # Generates a pkl
-    relfn = 'addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
+    relfn = 'miller-addrprobe-data/addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
     pickle.dump(relevantaddrs, open(relfn,'wb'), 2)
     os.remove(trimfn)
 
 def prepare_snippets(ts):
-    outfn = 'addr-trimmed-%s.log' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
+    outfn = 'miller-addrprobe-data/addr-trimmed-%s.log' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
 
     starttime = ts-60*2 # Two minutes before schedule
     stoptime = ts+60*60 # An hour after schedule
     print 'looking for a range of', starttime, 'to', stoptime
-    fns = sorted(glob.glob('/var/log/connector/verbatim.log-*.gz'))
+    fns = sorted(glob.glob('/mnt/xvdb/verbatim.log-*.gz'))
     relevant_files = []
     for fn in fns:
         timestamp = float(fn.split('.')[-2].split('-')[-1])
         if timestamp < starttime:
-            print 'reject by filename', starttime, timestamp
             continue
         firstlog = logger.logs_from_stream(gzip.open(fn)).next()
         if firstlog.timestamp > stoptime:
-            print 'reject by first log', stoptime, firstlog
             break
         relevant_files.append(fn)
     print 'relevant files:', relevant_files
+    assert relevant_files
     cmd = 'cat %s | gzip -d | /home/amiller/projects/netmine/logclient/addrs-in-range --starttime=%d --stoptime=%d > %s' % (' '.join(relevant_files), starttime, stoptime, outfn)
     print cmd
     subprocess.call(cmd, shell=True)
@@ -55,7 +54,7 @@ def parse_addrprobe_pass1(fn):
     count = 0
     f = gzip.open(fn) if fn.endswith('.gz') else open(fn)
     for log in logger.logs_from_stream(f):
-        if not count % 10000: print count
+        #if not count % 10000: print count
         count += 1
         if log.is_sender: continue
         nid = (log.source_id, log.handle_id)
@@ -85,7 +84,7 @@ def parse_addrprobe_pass2(fn, ipmap, addrmap):
     count = 0
     f = gzip.open(fn) if fn.endswith('.gz') else open(fn)
     for log in logger.logs_from_stream(f):
-        if not count % 10000: print count
+        #if not count % 10000: print count
         count += 1
         if log.is_sender: continue
         nid = (log.source_id, log.handle_id)
@@ -114,20 +113,34 @@ def count_reports(ra):
 
 def infer_edges(ra):
     g = nx.Graph()
-
     for src in ra:
-        for times in ra[src]:
-            if len(ra[src][times]) == 1:
-                tgt = list(ra[src][times])[0]
-                g.add_edge(src,tgt)
+        for ts in ra[src]:
+            d = list(dict(sorted(ra[src][ts])).iteritems())
+            # Filter by unique
+            if len(d) == 1:
+                # Filter by <2h
+                for tgt,logtime in d:
+                    if logtime - 60*(60*2-20) > ts: continue
+                    g.add_edge(src,tgt)
     return g
+
+def all_edges():
+    fns = sorted(glob.glob('miller-addrprobe-data/addr-relevant-*.pkl'))
+    for fn in fns:
+        dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
+        ts = int(dat.split('-')[-1])
+        print fn
+        ra = pickle.load(open(fn))
+        g = infer_edges(ra)
+        gt_compare(g,ts)
+        nx.write_gexf(g, 'miller-addrprobe-data/addrprobe-%s.gexf' % dat)
 
 def main():
     import sys
     if not len(sys.argv) == 2:
         print 'usage: process_addrprobe.py <timestamp>'
         sys.exit(1)
-    ts = float(sys.argv[1])
+    ts = float(sys.argv[1].strip())
     if not ts in addrprobe_timestamps:
         print ts, 'doesn\'t seem like an addrprobe start time'
         sys.exit(1)
