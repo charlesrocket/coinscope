@@ -14,7 +14,7 @@ import os
 
 START_ADDR = 1413850620
 
-addrprobe_timestamps = [START_ADDR + i*60*4 for i in range(70)]
+addrprobe_timestamps = [START_ADDR + i*60*60*4 for i in range(70)]
 
 def pass_one_and_two(ts):
     trimfn = prepare_snippets(ts)
@@ -22,6 +22,7 @@ def pass_one_and_two(ts):
     relevantaddrs = parse_addrprobe_pass2(trimfn, ipmap, addrmap) # Generates a pkl
     relfn = 'addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
     pickle.dump(relevantaddrs, open(relfn,'wb'), 2)
+    os.remove(trimfn)
 
 def prepare_snippets(ts):
     outfn = 'addr-trimmed-%s.log' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
@@ -120,3 +121,20 @@ def infer_edges(ra):
                 tgt = list(ra[src][times])[0]
                 g.add_edge(src,tgt)
     return g
+
+def main():
+    import sys
+    if not len(sys.argv) == 2:
+        print 'usage: process_addrprobe.py <timestamp>'
+        sys.exit(1)
+    ts = float(sys.argv[1])
+    if not ts in addrprobe_timestamps:
+        print ts, 'doesn\'t seem like an addrprobe start time'
+        sys.exit(1)
+    pass_one_and_two(ts)
+
+if __name__ == '__main__':
+    try:
+        __IPYTHON__
+    except NameError:
+        main()
