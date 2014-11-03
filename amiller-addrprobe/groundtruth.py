@@ -111,7 +111,7 @@ def peers_versions(fn):
         except: return False
 
     addrconntime = [(_['addr'],_['subver'],_['inbound']) for _ in d]
-    addrconntime = [(addr,conn,inbound) for addr,conn,inbound in addrconntime if is_ipv4(addr)]
+    addrconntime = [(addr,(conn,subver,inbound)) for addr,conn,inbound in addrconntime if is_ipv4(addr)]
     return dict(addrconntime)
 
 def gt_compare(g, timestamp):
@@ -130,6 +130,8 @@ def gt_compare(g, timestamp):
         FP = g1.difference(t)
         FN = s.difference(g1)
         print '%16s TP: %3d FP: %3d FN: %3d' % (peer, len(TP), len(FP), len(FN))
+        for fn in FN:
+            print fn, g.degree((fn,8333))
     
 def gtpeers(timestamp):
     d = dict((k,v) for (k,_,v) in gtlabels)
