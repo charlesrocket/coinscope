@@ -1,5 +1,4 @@
 import networkx as nx
-import parsers
 import gzip
 import glob
 
