@@ -9,8 +9,7 @@ import logger;
 # directory and prints it out. It's meant to both test and demonstrate
 # use of the logger.py classes
 
-fp = open('verbatim.out', 'rb') # This could be a socket to logserver
-
+fp = open('/container_wide/connector-dreyfus/verbatim/verbatim.log', 'rb') # This could be a socket to logserver
 
 while(True):
     length = fp.read(4)

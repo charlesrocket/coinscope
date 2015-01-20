@@ -217,7 +217,7 @@ int main(int argc, char *argv[]) {
 		cerr << "attempting to kill dupes before run\n";
 		pid_t child = fork();
 		if (child == 0) {
-		  const char *kill_dupes = "/home/litton/netmine/clients/kill_dupes";
+		  const char *kill_dupes = "/home/amiller/projects/netmine/clients/kill_dupes";
 		  execl(kill_dupes, kill_dupes, config_file, NULL);
 		  cerr << "Failed to kill dupes!\n";
 		} else if (child > 0) {
@@ -247,7 +247,7 @@ int main(int argc, char *argv[]) {
 		child = fork();
 
 		if (child == 0) {
-			const char *cycle = "/home/litton/netmine/clients/cycle";
+			const char *cycle = "/home/amiller/projects/netmine/clients/cycle";
 #ifndef FIND_CXN
 			execl(cycle, cycle, config_file, NULL);
 #endif
@@ -323,7 +323,7 @@ int main(int argc, char *argv[]) {
 		cerr << "attempting to kill dupes after cycle\n";
 		child = fork();
 		if (child == 0) {
-		  const char *kill_dupes = "/home/litton/netmine/clients/kill_dupes";
+		  const char *kill_dupes = "/home/amiller/projects/netmine/clients/kill_dupes";
 		  execl(kill_dupes, kill_dupes, config_file, NULL);
 		  cerr << "Failed to kill dupes!\n";
 		} else if (child > 0) {
@@ -354,7 +354,7 @@ int main(int argc, char *argv[]) {
 		child = fork();
 
 		if (child == 0) {
-			const char *getaddr = "/home/litton/netmine/clients/getaddr";
+			const char *getaddr = "/home/amiller/projects/netmine/clients/getaddr";
 			execl(getaddr, getaddr, config_file, NULL);
 			cerr << "Child did not getaddr!" << endl;
 			exit(0);

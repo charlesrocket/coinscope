@@ -79,6 +79,11 @@ class ctrl_log(log):
         return ctrl_log(log_types.CTRL, source_id, timestamp, rest)
 
 
+class bitcoin_connector_log(log):
+    @staticmethod
+    def deserialize(source_id, timestamp, rest):
+        return error_log(log_types.CONNECTOR, source_id, timestamp, rest)
+
 class error_log(log):
     @staticmethod
     def deserialize(source_id, timestamp, rest):
