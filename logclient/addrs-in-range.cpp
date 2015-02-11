@@ -99,6 +99,19 @@ int print_message(const uint8_t *buf, size_t len) {
 			cout.write((const char*) buf, len);
 			cout.flush();
 		}
+	} else if (lt == BITCOIN) {
+		/* TODO: write a function to unwrap this as a struct */
+		uint32_t update_type = ntoh(*((uint32_t*)(msg + 4)));
+		switch (update_type) {
+		case ACCEPT_SUCCESS:
+		case CONNECT_SUCCESS:
+			uint32_t netlen = (uint32_t) len;
+			netlen = hton(netlen);
+			cout.write((const char *) &netlen, 4);
+			cout.write((const char*) buf, len);
+			cout.flush();
+			break;
+		}
 	}
 	return 0;
 }

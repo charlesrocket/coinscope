@@ -11,18 +11,38 @@ import subprocess
 import glob
 from datetime import datetime
 import os
+import math
 
-START_ADDR = 1413850620
+class NoRelevantLogsException(Exception):
+    pass
 
-addrprobe_timestamps = [START_ADDR + i*60*60*4 for i in range(70)]
+# START_ADDR = 1413850620
+
+START_ADDR = (((1420642201/60)/240) * 240+17)*60 # Start time for connector-dreyfus
+addrprobe_timestamps = [START_ADDR]
+while True:
+    next_timestamp = addrprobe_timestamps[-1] + 240*60
+    if time.time() - next_timestamp < 12*60*60:
+        # Ignore addrprobes more recent than 12 hours ago
+        break
+    addrprobe_timestamps.append(next_timestamp)
+    
+#START_ADDR = (98741*240+17)*60 # 
 
 def pass_one_and_two(ts):
-    trimfn = prepare_snippets(ts)
+    relfn = 'miller-addrprobe-data/addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
+    if os.path.exists(relfn):
+        print "Relevant-addrs already exists: skipping", relfn
+        return
+    try:
+        trimfn = prepare_snippets(ts)
+    except NoRelevantLogsException:
+        return
     ipmap, addrmap = parse_addrprobe_pass1(trimfn) # Generates a list of good IPs, stores in ipmap,addrmap
     relevantaddrs = parse_addrprobe_pass2(trimfn, ipmap, addrmap) # Generates a pkl
-    relfn = 'miller-addrprobe-data/addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
     pickle.dump(relevantaddrs, open(relfn,'wb'), 2)
     os.remove(trimfn)
+    do_edges(relfn)
 
 def prepare_snippets(ts):
     outfn = 'miller-addrprobe-data/addr-trimmed-%s.log' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
@@ -30,7 +50,8 @@ def prepare_snippets(ts):
     starttime = ts-60*2 # Two minutes before schedule
     stoptime = ts+60*60 # An hour after schedule
     print 'looking for a range of', starttime, 'to', stoptime
-    fns = sorted(glob.glob('/mnt/xvdb/verbatim.log-*.gz'))
+    #fns = sorted(glob.glob('/mnt/xvdb/verbatim.log-*.gz'))
+    fns = sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
     relevant_files = []
     for fn in fns:
         timestamp = float(fn.split('.')[-2].split('-')[-1])
@@ -41,7 +62,8 @@ def prepare_snippets(ts):
             break
         relevant_files.append(fn)
     print 'relevant files:', relevant_files
-    assert relevant_files
+    if not relevant_files: 
+        raise NoRelevantLogsException(outfn)
     cmd = 'cat %s | gzip -d | /home/amiller/projects/netmine/logclient/addrs-in-range --starttime=%d --stoptime=%d > %s' % (' '.join(relevant_files), starttime, stoptime, outfn)
     print cmd
     subprocess.call(cmd, shell=True)
@@ -56,20 +78,33 @@ def parse_addrprobe_pass1(fn):
     for log in logger.logs_from_stream(f):
         #if not count % 10000: print count
         count += 1
-        if log.is_sender: continue
-        nid = (log.source_id, log.handle_id)
-        if nid in ipmap:
+
+        # Store in "ipmap" oncec we see the connection accepted message
+        if log.log_type == logger.log_types.BITCOIN:
+            nid = (log.source_id, log.handle_id)
+            if nid in ipmap: continue # already registered, skip
+            addr = (log.remote_addr,log.remote_port)
+            ipmap[nid] = addr
+            continue
+
+        # Upgrade to "addrmap" once we receive an addr message
+        if log.log_type == logger.log_types.BITCOIN_MSG:
+
+            if log.is_sender: continue
+            nid = (log.source_id, log.handle_id)
+            if nid not in ipmap: continue # received addr, but not the connection?
             addr = ipmap[nid]
-            if addr in addrmap: continue # already good, skip
-        msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
-        if msg.command == 'version':
-            ipmap[(log.source_id, log.handle_id)] = (msg.addrFrom.ip, msg.addrFrom.port)
-        if msg.command == 'addr':
-            if not nid in ipmap: 
-                #print nid, 'not found in ipmap'
+            if addr in addrmap: continue # already good, possibly with a different nid in case of dupes
+            try:
+                msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
+            except ValueError, e:
+                print 'FAILED TO DECODE MESSAGE'
+                print e
                 continue
-            addr = ipmap[nid]
-            if not addr in addrmap:
+            #if msg.command == 'version':
+                #ipmap[(log.source_id, log.handle_id)] = (msg.addrFrom.ip, msg.addrFrom.port)
+            #    pass # No longer care about version messages
+            if msg.command == 'addr':
                 addrmap[addr] = nid
     return ipmap, addrmap
 
@@ -86,12 +121,20 @@ def parse_addrprobe_pass2(fn, ipmap, addrmap):
     for log in logger.logs_from_stream(f):
         #if not count % 10000: print count
         count += 1
+
+        if log.log_type != logger.log_types.BITCOIN_MSG: continue
         if log.is_sender: continue
         nid = (log.source_id, log.handle_id)
         if nid not in ipmap: continue
         if ipmap[nid] not in addrmap: continue
 
-        msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
+        try:
+            msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
+        except ValueError, e:
+            print 'FAILED TO DECODE MESSAGE'
+            print e
+            continue
+            
         if msg.command != 'addr': continue
 
         for addr in msg.addrs:
@@ -124,16 +167,29 @@ def infer_edges(ra):
                     g.add_edge(src,tgt)
     return g
 
+def do_edges(fn):
+    dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
+    gexfn = 'miller-addrprobe-data/addrprobe-%s.gexf' % dat
+    if os.path.exists(gexfn):
+        print gexfn, "already exists, skipping"
+        return
+    print fn
+    ra = pickle.load(open(fn))
+    g = infer_edges(ra)
+    for n in g.nodes(): 
+        g.node[n]['viz'] = {}
+        g.node[n]['viz']['size'] = (0.1 + math.log(g.degree(n)))/2
+    ts = int(dat.split('-')[-1])
+    nx.write_gexf(g, gexfn)
+    import subprocess
+    cmd = "CLASSPATH=./gephi-toolkit.jar jython gephi.py %s ./%s.gexf-test.gexf" % (gexfn, gexfn)
+    subprocess.call(cmd,shell=True)
+
 def all_edges():
     fns = sorted(glob.glob('miller-addrprobe-data/addr-relevant-*.pkl'))
     for fn in fns:
-        dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
-        ts = int(dat.split('-')[-1])
-        print fn
-        ra = pickle.load(open(fn))
-        g = infer_edges(ra)
-        gt_compare(g,ts)
-        nx.write_gexf(g, 'miller-addrprobe-data/addrprobe-%s.gexf' % dat)
+        do_edges(fn)
+
 
 def main():
     import sys
@@ -146,8 +202,15 @@ def main():
         sys.exit(1)
     pass_one_and_two(ts)
 
+
+def main2():
+    for ts in addrprobe_timestamps:
+        pass_one_and_two(ts)
+    all_edges()
+
 if __name__ == '__main__':
     try:
         __IPYTHON__
     except NameError:
+#        main2()
         main()
