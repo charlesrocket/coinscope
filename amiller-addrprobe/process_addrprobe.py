@@ -16,7 +16,14 @@ import math
 class NoRelevantLogsException(Exception):
     pass
 
+#DATA_DIR = 'miller-addprobe-data'
+#DATA_DIR = 'addrprobe-2014-redo'
+#DATA_DIR = 'addrprobe-2014-redoall'
+DATA_DIR = 'addrprobe-BOTH'
+
 # START_ADDR = 1413850620
+
+
 
 START_ADDR = (((1420642201/60)/240) * 240+17)*60 # Start time for connector-dreyfus
 addrprobe_timestamps = [START_ADDR]
@@ -26,11 +33,14 @@ while True:
         # Ignore addrprobes more recent than 12 hours ago
         break
     addrprobe_timestamps.append(next_timestamp)
+
+#addrprobe_timestamps += [int(fn[-14:-4]) for fn in sorted(glob.glob('addrprobe-2014-redo/addr-relevant-2014-1*.pkl'))]
+
     
 #START_ADDR = (98741*240+17)*60 # 
 
 def pass_one_and_two(ts):
-    relfn = 'miller-addrprobe-data/addr-relevant-%s.pkl' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
+    relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
     if os.path.exists(relfn):
         print "Relevant-addrs already exists: skipping", relfn
         return
@@ -45,13 +55,15 @@ def pass_one_and_two(ts):
     do_edges(relfn)
 
 def prepare_snippets(ts):
-    outfn = 'miller-addrprobe-data/addr-trimmed-%s.log' % datetime.strftime(datetime.fromtimestamp(ts), '%F-%s')
+    outfn = '%s/addr-trimmed-%s.log' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
 
-    starttime = ts-60*2 # Two minutes before schedule
-    stoptime = ts+60*60 # An hour after schedule
+    starttime = ts-60*5 # Five minutes before schedule
+    stoptime = ts+60*40 # Forty minutes after schedule
     print 'looking for a range of', starttime, 'to', stoptime
     #fns = sorted(glob.glob('/mnt/xvdb/verbatim.log-*.gz'))
-    fns = sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
+    #fns = sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
+    fns = sorted(glob.glob('/container_wide/oldverbatim/verbatim.log-*.gz'))
+    fns += sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
     relevant_files = []
     for fn in fns:
         timestamp = float(fn.split('.')[-2].split('-')[-1])
@@ -169,7 +181,7 @@ def infer_edges(ra):
 
 def do_edges(fn):
     dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
-    gexfn = 'miller-addrprobe-data/addrprobe-%s.gexf' % dat
+    gexfn = '%s/addrprobe-%s.gexf' % (DATA_DIR, dat)
     if os.path.exists(gexfn):
         print gexfn, "already exists, skipping"
         return
@@ -186,7 +198,7 @@ def do_edges(fn):
     subprocess.call(cmd,shell=True)
 
 def all_edges():
-    fns = sorted(glob.glob('miller-addrprobe-data/addr-relevant-*.pkl'))
+    fns = sorted(glob.glob('%s/addr-relevant-*.pkl' % (DATA_DIR,)))
     for fn in fns:
         do_edges(fn)
 
@@ -208,9 +220,26 @@ def main2():
         pass_one_and_two(ts)
     all_edges()
 
+def main3():
+    import sys
+    if not len(sys.argv) == 2:
+        print 'usage: process_addrprobe.py <timestamp>'
+        sys.exit(1)
+    ts = float(sys.argv[1].strip())
+    if not ts in addrprobe_timestamps:
+        print ts, 'doesn\'t seem like an addrprobe start time'
+        sys.exit(1)
+
+    # FIX
+    os.environ['TZ'] = 'UTC' # This is only for the 2014 data, when the localtimes were UTC!
+    time.tzset()
+    relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
+    do_edges(relfn)
+
 if __name__ == '__main__':
     try:
         __IPYTHON__
     except NameError:
-#        main2()
-        main()
+        main2()
+        #main()
+        #main3()

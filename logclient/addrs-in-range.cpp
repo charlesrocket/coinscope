@@ -84,7 +84,8 @@ int print_message(const uint8_t *buf, size_t len) {
 		msg += 5;
 		const struct bitcoin::packed_message* b = (const struct bitcoin::packed_message*)(msg);
 		if (!strncmp(b->command, "version", sizeof(b->command)) ||
-		    !strncmp(b->command, "addr", sizeof(b->command))
+		    !strncmp(b->command, "addr", sizeof(b->command)) ||
+		    !strncmp(b->command, "getaddr", sizeof(b->command))
 		    ) {
 			/*
 			cerr << time_to_str(&time);
