@@ -131,17 +131,23 @@ void grow_buf(uint8_t **buf, uint32_t sz) {
 	*buf = (uint8_t *) realloc((void *) *buf, sz);
 }
 
+
 int main(int argc, char *argv[]) {
+	int read_fd = -1;
 	if(argc != 2) {
+		//cerr << "Syntax: " << argv[0] << " logname" << endl;
 		cerr << "Syntax: " << argv[0] << " logname" << endl;
-		exit(1);
-	}
-	//
-	string logfile(argv[1]);
-	int read_fd = open(logfile.c_str(), O_RDONLY);
-	if(read_fd < 0) {
-		cerr << "Failed to open file descriptor for " << logfile << endl;
-		exit(1);
+		cerr << "No logname was provided, assuming stdin" << endl;
+		//exit(1);
+		read_fd = 0; // STDIN
+	} else {
+		//
+		string logfile(argv[1]);
+		read_fd = open(logfile.c_str(), O_RDONLY);
+		if(read_fd < 0) {
+			cerr << "Failed to open file descriptor for " << logfile << endl;
+			exit(1);
+		}
 	}
 
 	bool reading_len(true);
