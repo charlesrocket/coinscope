@@ -1,17 +1,26 @@
 import gzip
-import lzma
+import pylzma as lzma
+import json
 import glob
 import psycopg2
 from datetime import datetime
 from dateutil.parser import parse as parse_date
 import re
 
+#gtlabels = """
+# zt5YCvNG50cLCcmj,netmine-gt-10,54.187.48.148
+# JwNCQQAU8gGVzxFy,netmine-gt-11,54.187.173.83
+# ofHPuUFVj6ka9FPf,netmine-gt-12,54.69.82.165
+# 1OdGvFxAZsqx7loW,petertodd,162.243.165.105
+# sc8CBpaWKbeuDLsp,luke-jr,192.3.11.20
+#""".split()
+
 gtlabels = """
- zt5YCvNG50cLCcmj,netmine-gt-10,54.187.48.148
- JwNCQQAU8gGVzxFy,netmine-gt-11,54.187.173.83
- ofHPuUFVj6ka9FPf,netmine-gt-12,54.69.82.165
- 1OdGvFxAZsqx7loW,petertodd,162.243.165.105
- sc8CBpaWKbeuDLsp,luke-jr,192.3.11.20
+ U7wuYAe3V8xGQCQN,netmine-gt-1,52.5.228.129,
+rpZUUKxtETrXHzxn,netmine-gt-2,52.5.115.208,
+IJryCKmV2s9GmKnE,netmine-gt-3,52.5.194.119,
+AcnvfVEK8rxGPIqv,netmine-gt-4,52.4.56.33,
+X3fujPTOUSF7lNwB,netmine-gt-5,52.5.228.119,
 """.split()
 
 gtlabels = dict([(lambda y:(y[0],y[2]))(x.split(',')) for x in gtlabels])
@@ -53,9 +62,6 @@ def stable(dirs, target):
     return s, t
 
 def peers(fn):
-    import json
-    import gzip
-    import lzma
     try:
         f = gzip.open(fn)
         d = json.load(f)
@@ -79,6 +85,7 @@ def peers(fn):
 def submit_peerinfo(cur, fn):
     timestamp = int(re.findall('peerinfo-(\d+)\.\d+\.gz$', fn)[0])
     ds = peers(fn)
+    print len(ds)
     if not ds: return
     for d in ds:
         ts = datetime.fromtimestamp(timestamp)

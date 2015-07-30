@@ -36,7 +36,7 @@ def do_recv(sock, length):
 
 def reader_thread():
     logsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    logsock.connect("/tmp/logger/clients/bitcoin_msg")
+    logsock.connect("/container_wide/connector-dreyfus/logger/clients/bitcoin_msg")
 
     while True:
         length = do_recv(logsock, 4)
@@ -46,7 +46,7 @@ def reader_thread():
         sid, log_type, timestamp, rest = logger.log.deserialize_parts(record)
         if 'version' not in rest[:100]: continue # shortcut, hopefully
         log = logger.type_to_obj[log_type].deserialize(sid, timestamp, rest)
-        if log.is_sender: continue
+        #if log.is_sender: continue
         if not hasattr(log, 'bitcoin_msg'): continue
         try:
             msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
@@ -90,5 +90,5 @@ def main():
     except Exception:
         return
 
-if __name__ == '__main__':
-    main()
+#if __name__ == '__main__':
+#    main()

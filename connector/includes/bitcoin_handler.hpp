@@ -32,7 +32,7 @@ const uint32_t SEND_VERSION_INIT = 0x20000; /* we initiated the handshake */
 const uint32_t SEND_VERSION_REPLY = 0x40000;
    
 
-const std::string USER_AGENT("/Satoshi:0.9.2/");
+const std::string USER_AGENT("/UMD-Coinscope:0.0/");
 
 
 class handler {

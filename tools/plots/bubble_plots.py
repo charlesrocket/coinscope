@@ -166,7 +166,8 @@ def pretty(ct,mints):
     #fig1.savefig('bubble_plots.eps')
     #pyplot.close()
 
-if __name__ == '__main__':
+
+def main():
     argv = sys.argv
     if (len(argv) <= 1):
 	sys.exit(0);
@@ -182,148 +183,8 @@ if __name__ == '__main__':
 
     get_keys(target_nodes,observations)
 
-# def fix_key_graph(kg):
-#     inv = {}
-#     for rep,ips in kg.iteritems():
-#         for ip in ips:
-#             if ip in inv: inv[ip] = max(rep,inv[ip])
-#             else: inv[ip] = rep
-#     kg2 = defaultdict(lambda:set())
-#     for ip,rep in inv.iteritems():
-#         kg2[rep].add(ip)
-#     return dict(kg2)
-        
-
-# def birth_death_jump(key_graphs, key):
-#     # Parse a sequence of files, for each one recording all the edges incident to this node
-#     clf()
-#     tmax = max(key_graphs[0])
-#     for i in range(len(key_graphs)):
-#         print 'Beginning Round', i
-#         graph = fix_key_graph(key_graphs[i])
-#         for k in graph:
-#             graph[k] = tuple(set(graph[k]))
-#         ts = key_edges[i][0]
-#         # First just plot the graph
-#         height = -ts
-#         plot([-100,100],[height,height],color=(0.8,0.8,0.8),zorder=2)
-#         cs = map(len, graph.values())
-#         xs = (np.array(graph.keys())-tmax)/3600.
-#         xs[cs==0] = inf
-#         ys = len(graph)*[height]
-#         scatter(xs,ys,c=np.log10(cs),s=4*np.log2(cs)+1,zorder=3,vmin=0,vmax=4)
-#         print 'scatter once'
-#         if i == 0: continue
-#         print 'matching'
-
-
-#         # Find the matches
-#         gprev = fix_key_graph(key_graphs[i-1])
-#         tsprev = key_edges[i-1][0]
-#         births = defaultdict(lambda:0)
-#         deaths = defaultdict(lambda:0)
-#         # First prepare the back index, for the previous line
-#         invp = {}
-#         invn = {}
-#         for report,ips in gprev.iteritems():
-#             for ip in set(ips):
-#                 invp[ip] = max(report,invp[ip] if ip in invp else 0)
-#         for report,ips in graph.iteritems():
-#             for ip in set(ips):
-#                 if -height == 10 and 8.5 < (report-tmax)/3600. < 9.5:
-#                     print ip
-#                 invn[ip] = max(report,invn[ip] if ip in invn else 0)
-
-#         # Store the thickness of each line
-#         reportcount = defaultdict(lambda:0)
-
-#         # Count the number of correspondences between reports in past frame
-#         for ip,report in invn.iteritems():
-#             if ip in invp:
-#                 if invp[ip] > report:
-#                     print 'backwards:', ip, invp[ip], report
-#                 reportcount[(invp[ip],report)] += 1
-
-#         # births
-#         for ip in invn:
-#             if ip not in invp:
-#                 births[invn[ip]] += 1
-
-#         # deaths
-#         for ip in invp:
-#             if ip not in invn:
-#                 deaths[invp[ip]] += 1
-
-#         scalar = np.array([0.9,0.9,0.9,0.7])
-#         cm = matplotlib.cm.ScalarMappable()
-#         cm.set_clim(vmin=0,vmax=4)
-#         for (repa,repb),count in reportcount.iteritems():
-#             if count == 0: continue
-#             c = cm.to_rgba(np.log10(count))
-#             c = np.array(c)
-#             c *= scalar
-#             plot([(repa-tmax)/3600.,(repb-tmax)/3600.],[-(tsprev),-ts],c=c,linewidth=0.4*np.log2(count)+1)
-
-#         yyy = '24.30.18.18'
-#         if yyy in invn:
-#             print invn[yyy]
-#             plot((invn[yyy]-tmax)/3600.,height,'k^',markersize=15,linewidth=5)
-
-#         for birth,count in births.iteritems():
-#             if count == 0: continue
-#             c = cm.to_rgba(np.log10(count))
-#             c = np.array(c)
-#             c *= scalar
-#             plot([(birth-tmax)/3600.-0.4,(birth-tmax)/3600.], [height+.5,height], c=c, linewidth=0.4*np.log2(count)+1)
-
-#         for death,count in deaths.iteritems():
-#             c = cm.to_rgba(np.log10(count))
-#             c = np.array(c)
-#             c *= scalar
-#             plot([(death-tmax)/3600.-0.4,(death-tmax)/3600.], [-(tsprev)-.5,-tsprev], c=c, linewidth=0.4*np.log2(count)+1)
-
-#         #plot([report-0.2,report],[height,height-0.2],'k')
-#         # It's a Birth
-
-#     xticks(np.arange(-100,100,2))
-#     grid(axis='x')
-#     xlim(-12,15)
-#     ylabel('Probe time (hours)')
-#     title('Birth, Death, and Migration of AddrMan entries, by node')
-#     xlabel('Hours (0 points?)')
-
-
-# def focus_graph():
-#     # Draw the Key!
-#     xs = []
-#     ys = []
-#     cs = []
-#     xraw = []
-#     ips = []
-#     dt = {}
-#     ctsi = [(0,ct00),
-#             (0.25,ct15),
-#             (0.50,ct30),
-#             (1,ct60),
-#             (2,ct120),
-#             (4,ct240),(6,ct360),(8,ct480),(10,ct600),(12,ct720),(14,ct840)]
-#     for i,(tt,ctX) in enumerate(ctsi):
-#         ip = key_ip
-#         maxx = max(ctX[ip])
-#         #try: 
-#         tmax = max(t for t in ctX[ip] if ctX[ip][t] > 9 and t <= maxx - 2*60*60)
-#         #except ValueError: tmax = max(t for t in ctX[ip])
-#         #tmax = max(t for t in ct00[ip])
-#         #tmax = max(t for t in ct120[ip] if ct120[ip][t] > 120)
-#         xraw.append([])
-#         for report in ctX[ip]:
-#             ips.append(ip)
-#             #ys.append(len(xraw)-1)
-#             ys.append(tt)
-#             xs.append((report-tmax)/3600.)
-#             cs.append(ctX[ip][report])
-#             xraw[-1].append(report-tmax)
-#             yline = -4
-#         plot([-100,100],[yline-4-tt*2,yline-4-tt*2],color=(0.8,0.8,0.8),zorder=2)
-
-
+if __name__ == '__main__':
+    try:
+        __IPYTHON__
+    except NameError:
+        main()

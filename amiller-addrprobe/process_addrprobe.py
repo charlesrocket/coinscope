@@ -2,6 +2,7 @@ import logger
 import sys
 from struct import *
 import gzip
+from bitcoin.core.serialize import SerializationTruncationError
 from bitcoin.messages import *
 from cStringIO import StringIO
 from collections import defaultdict
@@ -10,39 +11,27 @@ import networkx as nx
 import subprocess
 import glob
 from datetime import datetime
+import time
 import os
 import math
-
+import psycopg2
+from signal import signal, SIGPIPE, SIG_DFL
 class NoRelevantLogsException(Exception):
     pass
 
 #DATA_DIR = 'miller-addprobe-data'
 #DATA_DIR = 'addrprobe-2014-redo'
 #DATA_DIR = 'addrprobe-2014-redoall'
-DATA_DIR = 'addrprobe-BOTH'
-
-# START_ADDR = 1413850620
+#DATA_DIR = 'addrprobe-BOTH'
 
 
 
-START_ADDR = (((1420642201/60)/240) * 240+17)*60 # Start time for connector-dreyfus
-addrprobe_timestamps = [START_ADDR]
-while True:
-    next_timestamp = addrprobe_timestamps[-1] + 240*60
-    if time.time() - next_timestamp < 12*60*60:
-        # Ignore addrprobes more recent than 12 hours ago
-        break
-    addrprobe_timestamps.append(next_timestamp)
 
-#addrprobe_timestamps += [int(fn[-14:-4]) for fn in sorted(glob.glob('addrprobe-2014-redo/addr-relevant-2014-1*.pkl'))]
-
-    
-#START_ADDR = (98741*240+17)*60 # 
 
 def pass_one_and_two(ts):
     relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
     if os.path.exists(relfn):
-        print "Relevant-addrs already exists: skipping", relfn
+        #print "Relevant-addrs already exists: skipping", relfn
         return
     try:
         trimfn = prepare_snippets(ts)
@@ -60,10 +49,11 @@ def prepare_snippets(ts):
     starttime = ts-60*5 # Five minutes before schedule
     stoptime = ts+60*40 # Forty minutes after schedule
     print 'looking for a range of', starttime, 'to', stoptime
-    #fns = sorted(glob.glob('/mnt/xvdb/verbatim.log-*.gz'))
-    #fns = sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
-    fns = sorted(glob.glob('/container_wide/oldverbatim/verbatim.log-*.gz'))
-    fns += sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
+
+    #fns = sorted(glob.glob('/container_wide/oldverbatim/verbatim.log-*.gz'))
+    #fns += sorted(glob.glob('/container_wide/connector-dreyfus/verbatim/verbatim.log-*.gz'))
+    fns = sorted(glob.glob('/scratch/verbatim-%s/verbatim/verbatim.log-*.gz' % (ALTCOIN,)))
+
     relevant_files = []
     for fn in fns:
         timestamp = float(fn.split('.')[-2].split('-')[-1])
@@ -76,9 +66,10 @@ def prepare_snippets(ts):
     print 'relevant files:', relevant_files
     if not relevant_files: 
         raise NoRelevantLogsException(outfn)
+    
     cmd = 'cat %s | gzip -d | /home/amiller/projects/netmine/logclient/addrs-in-range --starttime=%d --stoptime=%d > %s' % (' '.join(relevant_files), starttime, stoptime, outfn)
     print cmd
-    subprocess.call(cmd, shell=True)
+    subprocess.call(cmd, shell=True, close_fds=True, preexec_fn = lambda: signal(SIGPIPE, SIG_DFL))
     return outfn
 
 def parse_addrprobe_pass1(fn):
@@ -113,17 +104,17 @@ def parse_addrprobe_pass1(fn):
                 print 'FAILED TO DECODE MESSAGE'
                 print e
                 continue
+            except SerializationTruncationError, e:
+                print 'TRUNCATED MESSAGE'
+                print e
+                continue
+
             #if msg.command == 'version':
                 #ipmap[(log.source_id, log.handle_id)] = (msg.addrFrom.ip, msg.addrFrom.port)
             #    pass # No longer care about version messages
             if msg.command == 'addr':
                 addrmap[addr] = nid
     return ipmap, addrmap
-
-def test(fn):
-    for log in logger.logs_from_stream(gzip.open(fn)):
-        msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
-        break
 
 def parse_addrprobe_pass2(fn, ipmap, addrmap):
     relevantaddrs = defaultdict(lambda:defaultdict(list))
@@ -183,7 +174,7 @@ def do_edges(fn):
     dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
     gexfn = '%s/addrprobe-%s.gexf' % (DATA_DIR, dat)
     if os.path.exists(gexfn):
-        print gexfn, "already exists, skipping"
+        #print gexfn, "already exists, skipping"
         return
     print fn
     ra = pickle.load(open(fn))
@@ -209,14 +200,46 @@ def main():
         print 'usage: process_addrprobe.py <timestamp>'
         sys.exit(1)
     ts = float(sys.argv[1].strip())
-    if not ts in addrprobe_timestamps:
+    if not ts in ADDRPROBE_TIMESTAMPS:
         print ts, 'doesn\'t seem like an addrprobe start time'
         sys.exit(1)
     pass_one_and_two(ts)
 
 
 def main2():
-    for ts in addrprobe_timestamps:
+    if not len(sys.argv) == 2:
+        print 'usage: process_addrprobe.py <altcoin_name>'
+        sys.exit(1)
+
+    global ALTCOIN, ADDRPROBE_TIMESTAMPS, DATA_DIR
+    ALTCOIN = sys.argv[1]
+    assert ALTCOIN in ('bitcoin','litecoin')
+
+    DATA_DIR = 'addrprobe-data/addrprobe-%s' % (ALTCOIN,)
+    ADDRPROBE_TIMESTAMPS = []
+
+    # Preload bitcoin experiment timestamps?
+    if ALTCOIN == 'bitcoin':
+        # START_ADDR = 1413850620
+        START_ADDR = (((1420642201/60)/240) * 240+17)*60 # Start time for connector-dreyfus
+        ADDRPROBE_TIMESTAMPS = [START_ADDR]
+        while True:
+            # Add all the "fixed" timestamps from 2015-jan-march before daylight savings.
+            next_timestamp = ADDRPROBE_TIMESTAMPS[-1] + 240*60
+            if next_timestamp > 1425788220:
+                break
+            ADDRPROBE_TIMESTAMPS.append(next_timestamp)
+        
+    with psycopg2.connect("dbname=connector") as conn:
+        cur = conn.cursor()
+        # Ignore addrprobes more recent than 12 hours ago
+        data = (ALTCOIN, datetime.fromtimestamp(1425788220), datetime.fromtimestamp(time.time() - 12*60*60))
+        cur.execute("SELECT altcoin, ts FROM alt_addrprobe_experiments WHERE altcoin = %s AND ts > %s AND ts < %s ORDER BY ts", data)
+        for _,date in cur.fetchall():
+            print int(date.strftime("%s"))
+            ADDRPROBE_TIMESTAMPS.append(int(date.strftime("%s")))
+
+    for ts in ADDRPROBE_TIMESTAMPS:
         pass_one_and_two(ts)
     all_edges()
 
@@ -226,7 +249,7 @@ def main3():
         print 'usage: process_addrprobe.py <timestamp>'
         sys.exit(1)
     ts = float(sys.argv[1].strip())
-    if not ts in addrprobe_timestamps:
+    if not ts in ADDRPROBE_TIMESTAMPS:
         print ts, 'doesn\'t seem like an addrprobe start time'
         sys.exit(1)
 

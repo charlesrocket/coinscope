@@ -113,6 +113,12 @@ int print_message(const uint8_t *buf, size_t len) {
 			cout.flush();
 			break;
 		}
+	} else if (lt == CLIENT) {
+		uint32_t netlen = (uint32_t) len;
+		netlen = hton(netlen);
+		cout.write((const char *) &netlen, 4);
+		cout.write((const char*) buf, len);
+		cout.flush();
 	}
 	return 0;
 }
