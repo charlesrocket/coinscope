@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
 	remote_addr.sin_family = AF_INET;
 	//if (inet_pton(AF_INET, "192.237.217.160", &remote_addr.sin_addr) != 1) {
 	//if (inet_pton(AF_INET, "151.236.218.211", &remote_addr.sin_addr) != 1) {
-	if (inet_pton(AF_INET, "66.178.182.35", &remote_addr.sin_addr) != 1) {
+	if (inet_pton(AF_INET, "178.21.118.174", &remote_addr.sin_addr) != 1) {
 		perror("inet_pton destination");
 		return EXIT_FAILURE;
 	}
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	remote_addr.sin_port = hton(static_cast<uint16_t>(9333));
+	remote_addr.sin_port = hton(static_cast<uint16_t>(18333));
 	local_addr.sin_port = hton(static_cast<uint16_t>(0xdead));
 
 	connect_msg message(&remote_addr, &local_addr);

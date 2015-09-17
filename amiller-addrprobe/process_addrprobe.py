@@ -27,7 +27,6 @@ class NoRelevantLogsException(Exception):
 
 
 
-
 def pass_one_and_two(ts):
     relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
     if os.path.exists(relfn):
@@ -158,8 +157,9 @@ def count_reports(ra):
     print count
 
 def infer_edges(ra):
-    g = nx.Graph()
+    g = nx.DiGraph()
     for src in ra:
+        g.add_node(src)
         for ts in ra[src]:
             d = list(dict(sorted(ra[src][ts])).iteritems())
             # Filter by unique
@@ -176,7 +176,7 @@ def do_edges(fn):
     if os.path.exists(gexfn):
         #print gexfn, "already exists, skipping"
         return
-    print fn
+
     ra = pickle.load(open(fn))
     g = infer_edges(ra)
     for n in g.nodes(): 

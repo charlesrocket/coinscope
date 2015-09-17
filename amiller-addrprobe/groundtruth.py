@@ -1,274 +1,293 @@
+# Groundtruth 
+# 
+# Covers groundtruth runs from July 1 2015 to August 10
+#
+
+import psql_groundtruth
 import networkx as nx
-import gzip
-import glob
+import time
+import re
+from collections import defaultdict
+from dateutil.parser import parse as parse_date
+from datetime import datetime
+import cPickle as pickle
 
-# Compare edge and 2hr-addr data with ground truth
+DATA_DIR = 'addrprobe-BOTH'
 
-# gtlabels = """
-# sc8CBpaWKbeuDLsp,luke-jr,192.3.11.20
-# 1OdGvFxAZsqx7loW,petertodd,162.243.165.105
-# PdfNu27H9Hw0hhy9,nanotube,8.28.87.106
-# cTlI5OuRqvYbnIEE,phantomcircuit,198.27.67.106
-# FNJQp6iPaSGKtscC,midnightmagic,162.244.25.88
-# U7wuYAe3V8xGQCQN,gtec2-1,54.84.88.123
-# rpZUUKxtETrXHzxn,gtec2-2,54.86.44.124
-# IJryCKmV2s9GmKnE,gtec2-3,54.187.175.94
-# AcnvfVEK8rxGPIqv,gtec2-4,54.187.114.108
-# X3fujPTOUSF7lNwB,gtec2-5,54.72.194.70
-# """.split()
+gt_ips = [ 
+ '52.1.224.48',
+ '54.173.131.86',
+ '52.4.199.113',
+ '54.165.205.116',
+ '54.172.207.196',
+]
 
-gtlabels = """
- zt5YCvNG50cLCcmj,netmine-gt-10,54.187.48.148
- JwNCQQAU8gGVzxFy,netmine-gt-11,54.187.173.83
- ofHPuUFVj6ka9FPf,netmine-gt-12,54.69.82.165
- 1OdGvFxAZsqx7loW,petertodd,162.243.165.105
- sc8CBpaWKbeuDLsp,luke-jr,192.3.11.20
-""".split()
+# Parse date example:
+# parse_date('Oct 15 2014')
 
-gtlabels = [x.split(',') for x in gtlabels]
+good_satoshis = [
+ '/Satoshi:0.6.2/',
+ '/Satoshi:0.6.3/',
+ '/Satoshi:0.7.0.3/',
+ '/Satoshi:0.7.1/',
+ '/Satoshi:0.7.2/',
+ '/Satoshi:0.7.3.3/',
+ '/Satoshi:0.8.0/',
+ '/Satoshi:0.8.1/',
+ '/Satoshi:0.8.1.99/',
+ '/Satoshi:0.8.2.2/',
+ '/Satoshi:0.8.3/',
+ '/Satoshi:0.8.4/',
+ '/Satoshi:0.8.4/Eligius:3/',
+ '/Satoshi:0.8.5/',
+ '/Satoshi:0.8.6/',
+ '/Satoshi:0.8.7/',
+ '/Satoshi:0.8.8/',
+ '/Satoshi:0.8.99/',
+ '/Satoshi:0.9.0/',
+ '/Satoshi:0.9.1/',
+ '/Satoshi:0.9.2/',
+ '/Satoshi:0.9.2.1/',
+ '/Satoshi:0.9.2.1/opennodes.org:0.1/',
+ '/Satoshi:0.9.2/opennodes.org:0.1/',
+ '/Satoshi:0.9.3/',
+ '/Satoshi:0.9.4/',
+ '/Satoshi:0.9.5/',
+ '/Satoshi:0.9.99/',
+ '/Satoshi RBF:0.10.2/',
+ '/Satoshi RBF:0.11.0/ljr:20150711/',
+ '/Satoshi:0.10.0/',
+ '/Satoshi:0.10.0/ljr:20150220/',
+ '/Satoshi:0.10.0/opennodes.org:0.1/',
+ '/Satoshi:0.10.0/zsulocal:0.10/',
+ '/Satoshi:0.10.1/',
+ '/Satoshi:0.10.1/ljr:20150220/',
+ '/Satoshi:0.10.1/ljr:20150428/',
+ '/Satoshi:0.10.1/mining.bitcoinaffiliatenetwork.com amsterdam2:0.10.2/',
+ '/Satoshi:0.10.1/mining.bitcoinaffiliatenetwork.com amsterdam3:0.10.2/',
+ '/Satoshi:0.10.1/mining.bitcoinaffiliatenetwork.com nyiix2:0.10.2/',
+ '/Satoshi:0.10.1/mining.bitcoinaffiliatenetwork.com sydney:0.10.1/',
+ '/Satoshi:0.10.1/opennodes.org:0.1/',
+ '/Satoshi:0.10.2/',
+ '/Satoshi:0.10.99/',
+ '/Satoshi:0.11.0/',
+ '/Satoshi:0.11.0/ljr:20150711/',
+ '/Satoshi:0.11.0/mining.bitcoinaffiliatenetwork.com seattle:0.11.0/',
+ '/Satoshi:0.11.99/',
+ '/Satoshi:0.11.99/Gangnam Style:v1.00XL',
+ '/Satoshi:0.11.99/Gangnam Style:v1.01XL',
+]
 
-def within_ts(dirs, start, end):
-    files = sorted(glob.glob('%s/*.gz' % dirs))
-    if not files: return []
+def infer_edges_with_groundtruth(fn):
+    dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
+    ts = int(dat.split('-')[-1])
+    relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
+    print relfn
+    ra = pickle.load(open(relfn))
 
-    def timestamp(fn):
-        return int(fn.split('-')[-1].split('.')[0])
-    
-    return [fn for fn in files if start <= timestamp(fn) <= end]
+    # This method is similer to infer_edges,
+    # except it records 'all the squares' for edges involving GT nodes
 
-def stable(dirs, target):
-    s = set()
-    t = set()
-    conntime = {}
-    #conntime = 
-    fns = within_ts(dirs,target-3600*5, target+3600*3)
-    #print len(fns)
-    #if len(fns): print (target-3600*5,fns[0]), (target+3600*2,fns[-1])
+    #inference = dict( (gt_ip, defaultdict(lambda:defaultdict())) for gt_ip in gt_ips)
+    g_dupl = nx.DiGraph()
+    g_late = nx.DiGraph()
+    g_infer = nx.DiGraph()
+
+    for src in ra:
+        src_ip = src[0]
+        for ts in ra[src]:
+            d = list(dict(sorted(ra[src][ts])).iteritems())
+            # Filter by <2h
+            for tgt,logtime in d:
+                tgt_ip = tgt[0]
+                if not tgt_ip in gt_ips and not src_ip in gt_ips: continue
+                # Filter by unique
+                if len(d) == 1:
+                    if logtime - 60*(60*2-20) > ts:
+                        g_late.add_edge(src_ip, tgt_ip)
+                    else:
+                        g_infer.add_edge(src_ip,tgt_ip)
+                else:
+                    g_dupl.add_edge(src_ip, tgt_ip)
+    return g_infer, g_dupl, g_late
+
+def all_gt_2(fns):
+    gtdata = defaultdict(lambda: {}) # By gt_ip
     for fn in fns:
-        p = peers(fn)
-        v = set(p.keys())
-        # Remove all the nodes who reconnect during the experiment
-        reconnected = set()
-        for vi in v:
-            if vi in conntime and p[vi] != conntime[vi]:
-                reconnected.add(vi)
-        v = v.difference(reconnected)
-        conntime.update(p)
-                
-        if not t: 
-            t = set(v)
-            s = set(v)
-        else: 
-            s = set.intersection(s, set(v))
-            t = set.union(t, set(v))
-    return s, t
+        print fn
+        timestamp = int(re.findall('-(\d+).gexf', fn)[0])
 
-def peers(fn):
-    import json
-    import gzip
-    import lzma
-    try:
-        f = gzip.open(fn)
-        d = json.load(f)
-    except IOError:
-        f = lzma.LZMAFile(fn)
-        d = json.loads(f.read())
-    except ValueError:
-        return dict()
-    
-    def is_ipv4(addr):
-        import socket
-        if addr == '127.0.0.1': return False
-        try: 
-            socket.inet_aton(addr);
-            return True
-        except: return False
+        g_i, g_d, g_l = infer_edges_with_groundtruth(fn)
 
-    addrconntime = [(_['addr'].split(':')[0],int(_['conntime'])) for _ in d]
-    addrconntime = [(addr,conn) for addr,conn in addrconntime if is_ipv4(addr)]
-    return dict(addrconntime)
+        gt = {}
+        for gt_ip in gt_ips:
+            gt[gt_ip] = psql_groundtruth.lookup_groundtruth(gt_ip, timestamp)
 
-def peers_versions(fn):
-    import json
-    import gzip
-    import lzma
-    try:
-        f = gzip.open(fn)
-        d = json.load(f)
-    except IOError:
-        f = lzma.LZMAFile(fn)
-        d = json.loads(f.read())
-    except ValueError:
-        return dict()
-    
-    def is_ipv4(addr):
-        import socket
-        if addr == '127.0.0.1': return False
-        try: 
-            socket.inet_aton(addr);
-            return True
-        except: return False
-
-    addrconntime = [(_['addr'],_['subver'],_['inbound']) for _ in d]
-    addrconntime = [(addr,(conn,subver,inbound)) for addr,conn,inbound in addrconntime if is_ipv4(addr)]
-    return dict(addrconntime)
-
-def gt_compare(g, timestamp):
-    d = dict((k,v) for (k,_,v) in gtlabels)
-    p = gtpeers(timestamp)
-    good = [_[0] for _ in g.nodes()]
-    for peer in d.values():
-        s,t =  p[peer]
-        #print 'stable:', len(s), 'transient:', len(t)
-        s = s.intersection(good)
-        t = t.intersection(good)
-        #print 'stable:', len(s), 'transient:', len(t)
-        g1 = set([_[1][0] for _ in g.edges((peer,8333))])
-        #print 'inferred:', len(g1)
-        TP = g1.intersection(t)
-        FP = g1.difference(t)
-        FN = s.difference(g1)
-        print '%16s TP: %3d FP: %3d FN: %3d' % (peer, len(TP), len(FP), len(FN))
-        for fn in FN:
-            print fn, g.degree((fn,8333))
-    
-def gtpeers(timestamp):
-    d = dict((k,v) for (k,_,v) in gtlabels)
-    e = {}
-    for label in d:
-        s,t = stable('../data/uploads/%s/' % label, timestamp)
-        e[d[label]] = s,t
-    return e
-
-def compare(g, p):
-    if type(g) is nx.DiGraph:
-        g_asym = g.to_undirected(False)
-        g_sym = g.to_undirected(True)
-    else:
-        g_asym = g
-        g_sym = g
-    #print len(g_asym.edges()), len(g_sym.edges())
-    print '\t\tGT:  x/y \t\t Asymmetric: (FP,  [afterremoval]/FNx/FNy, TPx/TPy) Symmetric: (FP,  FNx/FNy, TPx/TPy)'
-
-    gtitems = sorted(gtrounds, key=lambda k:gtrounds[k])
-    allbad = set()
-    for k in flaggediters:
-        allbad = allbad.union(set(probe_trials[k]))
-    print len(allbad) 
-    #print allbad
-    #for k,(s,t) in p.iteritems():
-    for k in gtitems:
-        if k in allbad: continue
-        if k not in g_asym: continue
-        s,t = p[k]
-        x = s = set([_ for _ in s if _ in g])
-        y = t = set([_ for _ in t if _ in g])
-        asym = set([_[1] for _ in g_asym.edges(k)])
-        sym = set([_[1] for _ in g_sym.edges(k)])
-
-        #  Asymmetric: (FP, FNx/FNy, TPx/TPy), Symmetric: (FP, FNx/FNy, TPx/TPy)?
-        aFNxC_ = x.difference(asym).difference(set(allbad))
-        aFNxC = len(aFNxC_)
-
-        #print 'asym difference'
-        #print x.difference(asym)
-
-        aFP = len(asym.difference(y))
-        aFNx = len(x.difference(asym))
-        aFNy = len(y.difference(asym))
-        aTPx = len(asym.intersection(x))
-        aTPy = len(asym.intersection(y))
-        sFP = len(sym.difference(y))
-        sFNx = len(x.difference(sym))
-        sFNy = len(y.difference(sym))
-        sTPx = len(sym.intersection(x))
-        sTPy = len(sym.intersection(y))
-
-        print 'sFNx', x.difference(sym)
-        #print 'aFP', asym.difference(y)
-
-        if k in allbad:
-            print k, 'flagged for error'
-
-        if 0:
-            print '% latex ip:', k
-            print '(%d/%d) &   %d & ([%d]/%d/%d) & (%d/%d) & %d & (%d/%d) & (%d/%d)' % \
-                (len(s), len(t), aFP, aFNxC, aFNx, aFNy, aTPx, aTPy, sFP, sFNx, sFNy, sTPx, sTPy)
-        else:
-            print '%15s\tIter[%2d]: GT:%3d/%3d\t Asymmetric: (%3d, [%3d]/%3d/%3d, %3d/%3d) Symmetric: (%3d, %3d/%3d, %3d/%3d) \\\\' % \
-                (k, gtrounds[k], len(s), len(t), aFP, aFNxC, aFNx, aFNy, aTPx, aTPy, sFP, sFNx, sFNy, sTPx, sTPy)
-
-        
-        #print '%15s\tGT:%3d/%3d\t Detected:%3d/%3d\t  FN:%3d\t FP:%3d TP:%3d' %  \
-        #    (k, len(s), len(t), len(asym), len(sym), len(s.difference(asym)),
-        #     len(asym.difference(t)), len(asym.intersection(t)))
-        #for c in list(set.difference(e,t))[:10]:
-        #for c in list(set.intersection(e,s))[:10]:
-        #    if c in d:
-        #        print c, len(d[c]), len(set(_[1] for _ in d[c].values()))
-        #print set.difference(set(v),set(e))
-
-def compare_both(g_edge, g_noedge, p):
-    nodes = set.union(set(g_edge),set(g_noedge))
-    for k,(s,t) in p.iteritems():
-        if k not in nodes:
-            print 'skipping %s, not in "good"' % (k,)
-            continue
-        s = set([_ for _ in s if _ in nodes])
-        t = set([_ for _ in t if _ in nodes])
-
-        FP = set()
-        FNx = set()
-        FNy = set()
-        TPx = set()
-        TPy = set()
-        TPs = set()
-        g_edge_un = g_edge.to_undirected(False)
-        for b,a in g_edge_un.edges(k):
-            # False positive: detected, but not even in the union
-            if a not in t: FP.add(a)
-            if a in t: TPx.add(a)
-            if a in s: TPy.add(a)
-            if g_edge.has_edge(a,b) and g_edge.has_edge(b,a) and a in t:
-                TPs.add(a)
-        for a in s:
-            # False Negative:
-            if g_noedge.has_edge(k, a) and g_noedge.has_edge(a, k): FNx.add(a)
-        for a in t:
-            # False Negative:
-            if g_noedge.has_edge(k, a) and g_noedge.has_edge(a, k): FNy.add(a)
-
-        e = g_edge_un.edges(k)
-        # False negative: 
-
-        if 0: # latex dump
-            print '% GT:x/y Detected FP FNx/FNy TPx/y (s)'
-            print '%d/%d & %d & %d & %d/%d & %d/%d (%d) \\\\' %  \
-            (len(s), len(t), len(e), len(FP), len(FNx), len(FNy), len(TPx), len(TPy), len(TPs))
-        else:
-            print '%15s\tGT:(%3d/%3d)\t Detected:%3d\t FP:%3d FN:%3d/%3d\t  TP:%3d/%d (%d)' %  \
-                (k, len(s), len(t), len(e), len(FP), len(FNx), len(FNy), len(TPx), len(TPy), len(TPs))
+        relfn = '%s/gt2015-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(timestamp), '%F-%s'))
+        pickle.dump((gt, g_i, g_d, g_l), open(relfn,'w'))
 
 
+def all_gt(fns):
+    gtdata = defaultdict(lambda: {}) # By gt_ip
+    for fn in fns:
+        print fn
+        timestamp = int(re.findall('-(\d+).gexf', fn)[0])
+        g = nx.read_gexf(fn)
+        g_dual = g.reverse()
+        for gt_ip in gt_ips:
+            gt = psql_groundtruth.lookup_groundtruth(gt_ip, timestamp)
 
-def is_ipython():
-    try: __IPYTHON__; return True
-    except: return False
+            out_edges = g.edges("('%s', 8333)" % gt_ip)
+            out_detected = set([eval(_[1])[0] for _ in out_edges])
 
-if __name__ == '__main__' and not is_ipython():
-    import sys
-    if len(sys.argv) < 3:
-        print 'groundtruth for addrobe results'
-        print 'usage: groundtruth.py <edges-*.7z file> <groundtruthlocation>'
-    else:
-        edgefile = sys.argv[1]
-        gtdir = sys.argv[1]
-        timestamp = parsers.date_from_edgefn(edgefile)
-        p = gtpeers(timestamp)
-        # substitute timefile
-        timefile = edgefile.replace('edges-','time-').replace('.7z','')
-        # find timestamp
-        times = parsers.parse_times(timefile)
-        good = parsers.parse_good(edgefile)
-        g_edge, g_no_edge = parsers.parse_edges_7z(edgefile, times, good)
-        compare_both(g_edge, g_no_edge, p)
+            in_edges = g_dual.edges("('%s', 8333)" % gt_ip)
+            in_detected = set([eval(_[1])[0] for _ in in_edges])
+
+            gtdata[gt_ip][timestamp] = dict(
+                out_detected=out_detected,
+                in_detected=in_detected,
+                gt=gt,
+                )
+    return gtdata
+
+def compare(fn, gt_ip):
+    timestamp = int(re.findall('-(\d+).gexf', fn)[0])
+    gt = psql_groundtruth.lookup_groundtruth(gt_ip, timestamp)
+    g = nx.read_gexf(fn)
+    return compare_groundtruth(g, gt, gt_ip)
+
+# Compare a directed graph 
+def compare_groundtruth(g, gt, gt_ip):
+    edges = g.edges("('%s', 8333)" % gt_ip)
+    detected = set([eval(_[1])[0] for _ in edges])
+    transient = set([k for k,v in gt.iteritems()])
+    stable = set([k for k,v in gt.iteritems() if int(v[0]) > 30])
+
+    stable_outbound = set(k for k in stable if not gt[k][3])
+    stable_satoshi = set(k for k in stable if gt[k][1] in good_satoshis)
+    stable_good  = stable_outbound.union(stable_satoshi)
+
+    print detected, transient
+    print 'Detected', len(detected)
+    print 'Stable:', len(stable)
+    print 'Stable[satoshi]:', len(stable_satoshi)
+    print 'Stable[outbound]:', len(stable_outbound)
+    print 'Stable[good]:', len(stable_good)
+    print 'Transient:', len(transient)
+    print 'TP:', len(detected.intersection(transient))
+    print 'FP:', len(detected.difference(transient))
+    print 'FN[stable]:', len(stable.difference(detected))
+    print 'FN[outbound]:', len(stable_outbound.difference(detected))
+    print 'FN[satoshi]:', len(stable_satoshi.difference(detected))
+    print 'FN[good]:', len(stable_good.difference(detected))
+    for k in stable_good.difference(detected):
+        print k, gt[k]
+
+# July 17 - August 8 experiment files
+experiment_files =  \
+['addrprobe-BOTH/addrprobe-2015-07-17-1437131824.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-17-1437146223.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-17-1437160622.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-17-1437175021.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-17-1437189420.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-17-1437189514.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437203854.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437218253.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437232652.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437247051.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437261450.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-18-1437275849.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437290248.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437304647.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437319046.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437333446.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437347845.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-19-1437362244.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437376643.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437391042.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437405442.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437419841.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437434240.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-20-1437448639.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437463038.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437477437.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437491836.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437506235.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437520634.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-21-1437535033.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437549432.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437563831.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437578230.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437592629.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437607028.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-22-1437621427.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437635826.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437650225.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437664624.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437679023.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437693422.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-23-1437707821.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437722220.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437722306.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437736646.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437751045.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437765444.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437779843.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-24-1437794242.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437808641.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437823040.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437837439.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437851838.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437866237.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-25-1437880636.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437895035.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437909434.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437923833.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437938233.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437952632.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-26-1437967031.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1437981430.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1437995829.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1438010228.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1438024627.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1438039026.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-27-1438053425.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438067824.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438082223.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438096622.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438111021.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438125420.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438125493.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-28-1438139833.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438154232.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438168631.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438183030.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438197429.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438211828.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-29-1438226227.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438240626.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438255025.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438269424.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438283823.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438298222.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-30-1438312621.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438327020.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438327091.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438341431.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438355830.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438370229.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438384628.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-07-31-1438399027.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438413426.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438427825.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438442224.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438456623.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438471022.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-01-1438485421.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438499820.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438499888.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438514228.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438528627.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438543026.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438557425.gexf',
+ 'addrprobe-BOTH/addrprobe-2015-08-02-1438571824.gexf',]
