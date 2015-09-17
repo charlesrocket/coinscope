@@ -12,7 +12,7 @@ import logger;
 # use of the logger.py classes
 
 
-fp = open('/container_wide/connector-dreyfus/verbatim/verbatim.log', 'rb') # This could be a socket to logserver
+#fp = open('/container_wide/connector-dreyfus/verbatim/verbatim.log', 'rb') # This could be a socket to logserver
 
 # Set the log type you are interested in here 
 interests = ~(logger.log_types.BITCOIN_MSG | logger.log_types.BITCOIN)
