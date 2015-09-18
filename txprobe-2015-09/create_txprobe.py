@@ -9,11 +9,11 @@ import time
 #from cStringIO import StringIO
 from io import StringIO
 #from test_createtx import Transaction, void_coinbase, k, txpair_from_p2sh, get_txin_second
-import logger
+
 from imp import reload
 import txtools; reload(txtools)
 from txtools import *
-from connector import *
+
 
 from bitcoin.wallet import CBitcoinAddress, CBitcoinSecret
 
