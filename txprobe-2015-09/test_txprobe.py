@@ -10,6 +10,15 @@ import time
 import logger
 from connector import *
 
+def do_send(sock, msg):
+    written = 0
+    while (written < len(msg)):
+        rv = sock.send(msg[written:], 0)
+        if rv > 0:
+            written = written + rv
+        if rv < 0:
+            raise Exception("Error on write (this happens automatically in python?)");
+
 def robust_recv(sock, size):
     buf = ""
     while True:
