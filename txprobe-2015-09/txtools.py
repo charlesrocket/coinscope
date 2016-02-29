@@ -54,7 +54,7 @@ class ATxIn(CMutableTxIn):
             assert seckey.pub.verify(sighash, sig)
             assert len(sig) < OP_PUSHDATA1
             scriptSig = CScript([sig, seckey.pub])
-            VerifyScript(scriptSig, scriptPubKey, tx, idx, ())
+            #VerifyScript(scriptSig, scriptPubKey, tx, idx, ())
             return scriptSig
 
         txin.setprevout = lambda:None

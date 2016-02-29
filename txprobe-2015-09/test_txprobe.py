@@ -1,253 +1,183 @@
 from binascii import hexlify, unhexlify
 from bitcoin.core import *
+from bitcoin.net import *
 from bitcoin.core.key import *
 from bitcoin.core.script import *
 from bitcoin.core.scripteval import *
 from bitcoin import base58
 from bitcoin.messages import *
-import time
-
+import shutil
+import json
 import logger
-from connector import *
+import os
+import glob
+import time
+import cPickle as pickle
+from cStringIO import StringIO
+from conntools import ConnectorSocket, read_logs_until
+import socket
 
-def do_send(sock, msg):
-    written = 0
-    while (written < len(msg)):
-        rv = sock.send(msg[written:], 0)
-        if rv > 0:
-            written = written + rv
-        if rv < 0:
-            raise Exception("Error on write (this happens automatically in python?)");
+from bitcoin import SelectParams
+SelectParams('testnet')
 
-def robust_recv(sock, size):
-    buf = ""
-    while True:
-        buf += sock.recv(size-len(buf), socket.MSG_WAITALL)
-        if len(buf) == size: return buf
+gt_ips = ['54.152.175.55',
+          '54.172.15.152',
+          '54.172.11.64',
+          '54.165.251.192',
+          '54.152.83.116']
 
-def get_cxns():
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
-    sock.connect("/container_wide/connector-testnet/bitcoin_control")
-    cmsg = command_msg(commands.COMMAND_GET_CXN, 0)
-    ser = cmsg.serialize()
-    do_send(sock, ser)
 
-    length = robust_recv(sock, 4)
-    length, = unpack('>I', length)
-    infos = robust_recv(socket, length)
-    # Each info chunk should be 36 bytes
+# Prepare the experiment messages
+def gettx(txhex): return CTransaction.deserialize(txhex.decode('hex'))
+def gethash(tx): return tx.GetHash()
 
-    cur = 0
-    while(len(infos[cur:cur+36]) > 0):
-        cinfo = connection_info.deserialize(infos[cur:cur+36])
-        print "{0} {1}:{2} - {3}:{4}".format(cinfo.handle_id, cinfo.remote_addr, cinfo.remote_port, cinfo.local_addr, cinfo.local_port)
-        yield cinfo.handle_id[0]
-        cur = cur + 36
 
+def purge_orphans(CLEANSER, CLEANSERS):
+    import time
+    sock = ConnectorSocket("/container_wide/connector-testnet/bitcoin_control")
+
+    node_map = dict(sock.get_cxns())
+    nodes = node_map.values()
+    dmap = {}
+    for ip, hid in node_map.iteritems(): dmap[hid] = ip
+
+    nodes = [n for n in nodes if dmap[n] in gt_ips]
+    print('GT Nodes:', nodes)
+
+    rid_cleanser = sock.register_tx(CLEANSER)
+    rid_cleansers = map(sock.register_tx, CLEANSERS)
+
+    print "Sending orphans"
+    for rid in rid_cleansers:
+        sock.send_to_nodes(rid, nodes)
+
+    print "Sending parent"
+    sock.send_to_nodes(rid_cleanser, nodes)
+
+    print "Done"
 
 # ./payloads/24ad5877747097a5a6cfba14385037f9df9df6d801bc316ce0ed40a78fb6c490-10.json
-def run_experiment(path='./payloads/24ad5877747097a5a6cfba14385037f9df9df6d801bc316ce0ed40a78fb6c490-10.json'):
+def run_experiment(payload_fn='24ad5877747097a5a6cfba14385037f9df9df6d801bc316ce0ed40a78fb6c490-10.json'):
     import time
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
-    sock.connect("/container_wide/connector-testnet/bitcoin_control")
+    sock = ConnectorSocket("/container_wide/connector-testnet/bitcoin_control")
 
-    nodes = list(get_cxns())
+    node_map = dict(sock.get_cxns())
+    nodes = node_map.values()
+    dmap = {}
+    for ip, hid in node_map.iteritems(): dmap[hid] = ip
+
+    probeset = [node_map[ip] for ip in gt_ips]
+    
     print('Nodes:', nodes)
 
-    import math
-    sn = int(math.ceil(math.sqrt(n)))
-    sched = schedule(range(n))
-    print('sqrt(n):', sn)
-    print('schedule:', len(sched))
+    # Read the payload, and 
+    payload = json.load(open('./payloads/%s' % payload_fn))
 
-    # 1. Create a setup transaction with enough inputs for 2 boosters per trial
-    tx_setup = Transaction()
-    tx_setup.vin = [get_txin_second()]
-    tx_setup_ins = []
-    for _ in sched:
-        for _ in range(2):
-            _out,_in = txpair_from_p2sh(nValue=0.01*COIN)
-            tx_setup.append_txout(_out)
-            tx_setup_ins.append(_in)
-    tx_setup.finalize()
+    # Make up a fake hash to act as a getdata_key
+    getdata_key = lx('9e7da7a0000000') + os.urandom(25)
 
-    # 1a. Add tx_setup to a block
-    block = make_block()
-    block.vtx.append(tx_setup._ctx)
-    block.hashMerkleRoot = block.calc_merkle_root()
+    manifest = payload
+    # Select len(parents) nodes to be test set
+    testset = list(set(nodes).difference(probeset))
+    import random
+    random.shuffle(testset)
+    testset = testset[:len(payload['parents'])]
 
-    PAYLOADS = []
-    for i,(tgt,tst) in enumerate(sched):
-        PARENTS, ORPHANS, FLOOD = create_txprobe(tx_setup_ins[2*i+0], tx_setup_ins[2*i+1], len(tgt))
-        PAYLOADS.append((PARENTS, ORPHANS, FLOOD))
-    return nodes, block, PAYLOADS
+    floodset = list(set(nodes).difference(testset))
 
+    # Write the manifest
+    manifest['getdata_key'] = b2lx(getdata_key)
+    manifest['probeset'] = probeset
+    manifest['testset'] = testset
+    manifest['floodset'] = floodset
+    manifest['nodes'] = dmap
+    manifest['time'] = time.time()
+    json.dump(manifest, open('./manifests/manifest-%d-%s' % (manifest['time'],payload_fn),'w'))
 
-def check_logs(nodes, PARENTS, ORPHANS, FLOOD, logs):
-    orphan_hashes = [Hash(o._ctx.serialize()) for o in ORPHANS]
-    d = dict(zip(orphan_hashes, nodes))
-    edges = set()
-    for log in logs:
-        if log.is_sender: continue
-        msg = MsgSerializable.stream_deserialize(StringIO('\xf9'+log.bitcoin_msg))
-        if msg.command != 'getdata': continue
-        print(log.handle_id)
-        connected = set(nodes)
-        connected.remove(log.handle_id) # Remove self
-        for i in msg.inv:
-            connected.remove(d[i.hash])
-        for i in connected:
-            edges.add(tuple(sorted((log.handle_id-min(nodes)+1,i-min(nodes)+1))))
-    for i,j in sorted(edges):
-        print(i, '<->', j)
-        yield(i,j)
+    PARENTS = map(gettx, manifest['parents'])
+    MARKERS = map(gettx, manifest['markers'])
+    FLOOD = gettx(manifest['flood'])
+    CLEANSER = gettx(manifest['cleanser'])
+    CLEANSERS = map(gettx, manifest['cleansers'])
 
-def check_all_logs(nodes, PAYLOADS, logs):
-    sched = schedule(nodes)
-    edges = set()
+    assert CLEANSERS[0].vin[0].prevout.hash == CLEANSER.GetHash()
+    
+    # Set up a reading thread
+    from threading import Thread
 
-    # First determine the edges to pay attention to
-    d = {}
-    expected = dict((n,[]) for n in nodes)
-    assert(len(PAYLOADS) == len(sched))
-    for (tgt,tst),(PARENTS,ORPHANS,_) in zip(sched,PAYLOADS):
-        orphan_hashes = [Hash(o._ctx.serialize()) for o in ORPHANS]
-        assert(len(orphan_hashes) == len(tgt))
-        d.update(dict(zip(orphan_hashes, tgt)))
-        for n in tst: expected[n] += orphan_hashes
-    for n in nodes: expected[n] = set(expected[n])
+    print('Setting up transactions')
+    rid_invblock = sock.register_inv(map(gethash, PARENTS) + [gethash(FLOOD)])
+    rid_invmarkers = sock.register_inv(map(gethash, MARKERS) + [getdata_key])
+    rid_getdata = sock.register_getdata(map(gethash, MARKERS) + map(gethash, PARENTS) + [gethash(FLOOD), getdata_key])
+    rid_markers = map(sock.register_tx, MARKERS)
+    rid_parents = map(sock.register_tx, PARENTS)
+    rid_flood = sock.register_tx(FLOOD)
+    rid_cleanser = sock.register_tx(CLEANSER)
+    rid_cleansers = map(sock.register_tx, CLEANSERS)
 
-    actual = dict((n,[]) for n in nodes)
-    for log in logs:
-        if log.is_sender: continue
-        msg = MsgSerializable.stream_deserialize(StringIO('\xf9'+log.bitcoin_msg))
-        if msg.command != 'getdata': continue
-        for i in msg.inv:
-            if i.hash in expected[log.handle_id]: 
-                actual[log.handle_id].append(i.hash)
-                
-    for n in nodes: actual[n] = set(actual[n])
+    print(rid_markers, rid_parents, rid_flood)
 
-    for i in nodes:
-        for h in expected[i]:
-            j = d[h]
-            if h not in actual[i]:
-                edges.add(tuple(sorted((j-min(nodes)+1,i-min(nodes)+1))))
-
-    for i,j in sorted(edges):
-        print(i, '<->', j)
-        yield(i,j)
-
-def run_experiment2(nodes, block, PAYLOADS):
-    import time
-
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
-    #socket.create_connection
-    sock.connect("/tmp/bitcoin_control")
-
-    # Set up a sending thread and queue
-    from threading import Lock, Thread
-    lock = Lock()
-
-    # Helper functions
-    def register_tx(tx):
-        m = msg_tx()
-        m.tx = tx._ctx
-        cmsg = bitcoin_msg(m.serialize())
-        ser = cmsg.serialize()
-        lock.acquire()
-        do_send(sock, ser)
-        rid = sock.recv(4)
-        lock.release()
-        rid, = unpack('>I', rid)  # message is now saved and can be sent to users with this id
-        return rid
-
-    def register_inv(txs):
-        m = msg_inv()
-        for tx in txs:
-            inv = CInv()
-            inv.type = 1 # TX
-            inv.hash = Hash(tx._ctx.serialize())
-            m.inv.append(inv)
-        cmsg = bitcoin_msg(m.serialize())
-        ser = cmsg.serialize()
-        lock.acquire()
-        do_send(sock, ser)
-        rid = sock.recv(4)
-        lock.release()
-        rid, = unpack('>I', rid)  # message is now saved and can be sent to users with this id
-        return rid
-
-    def broadcast(rid):
-        cmsg = command_msg(commands.COMMAND_SEND_MSG, rid, (targets.BROADCAST,))
-        ser = cmsg.serialize()
-        lock.acquire()
-        do_send(sock, ser)
-        lock.release()
-
-    def send_to_nodes(rid, nodes):
-        cmsg = command_msg(commands.COMMAND_SEND_MSG, rid, nodes)
-        ser = cmsg.serialize()
-        lock.acquire()
-        do_send(sock, ser)
-        lock.release()
-
-    # Run the experiment!
-    print('Setup')
-    broadcast(register_block(block))
-
-    sched = schedule(nodes)
-    global logs, all_logs
-    all_logs = []
-    print('Reading')
-    logsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
-    logsock.connect("/tmp/logger/clients/bitcoin_msg")
-
-    for (target_set, test_set), (PARENTS, ORPHANS, FLOOD) in zip(sched, PAYLOADS):
-        def g(sets, inputs):
-            (target_set, test_set) = sets
-            (PARENTS, ORPHANS, FLOOD) = inputs
-            print("Targets:", target_set)
-
-            print('Step 1: inv blocking')
-            broadcast(register_inv(PARENTS + [FLOOD]))
-            time.sleep(1)
-
-            print('Step 2: send the flood')
-            send_to_nodes(register_tx(FLOOD), test_set)
-
-            print('Step 3: prime the orphans')
-            for n,orphan in zip(target_set,ORPHANS):
-                send_to_nodes(register_tx(orphan), (n,))
-
-            time.sleep(3) # Make sure the flood propagates
-
-            print('Step 4: send parents')
-            for n,parent in zip(target_set,PARENTS):
-                send_to_nodes(register_tx(parent), (n,))
-            time.sleep(10)
-
-            print('Step 5: read back')
-            send_to_nodes(register_inv(ORPHANS), test_set)
-        Thread(target=g,args=((target_set, test_set), (PARENTS, ORPHANS, FLOOD))).start()
-        #g()
-
+    print('Forking a thread to capture log messages')
+    global logs
     logs = []
-    deadline = time.time() + 20
+    deadline = time.time() + 180 # Wait for three minutes
+    logsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
+    logsock.connect("/container_wide/connector-testnet/logger/clients/bitcoin_msg")
+
     def _read_logs():
-        while(True):
-            logsock.settimeout(deadline - time.time())
-            try:
-                length = logsock.recv(4, socket.MSG_WAITALL);
-                length, = unpack('>I', length)
-                logsock.settimeout(deadline - time.time())
-                record = logsock.recv(length, socket.MSG_WAITALL)
-            except socket.timeout: break
-            log_type, timestamp, rest = logger.log.deserialize_parts(record)
-            log = logger.type_to_obj[log_type].deserialize(timestamp, rest)
+        # Filter only messages we care about
+        for log in read_logs_until(logsock, deadline):
+            msg = MsgSerializable.stream_deserialize(StringIO(log.bitcoin_msg))
+            if msg is None: continue
+            if msg.command not in ('reject', 'tx', 'getdata', 'inv', 'notfound'): continue
             logs.append(log)
-            logsock.settimeout(None)
-        print('Done')
+
     t = Thread(target=_read_logs)
     t.start()
+
+    # move this payload to the spent list
+    shutil.move('./payloads/%s' % payload_fn, './spent/%d-%s' % (manifest['time'], payload_fn))
+
+    def sleep(t):
+        print('Sleeping %d seconds' % t)
+        time.sleep(t)
+
+    print "[Purge] Sending orphans"
+    for rid in rid_cleansers:
+        sock.send_to_nodes(rid, probeset)
+
+    print "[Purge] Sending parent"
+    sock.send_to_nodes(rid_cleanser, probeset)
+
+    print('Beginning experiment')
+
+    print('Step 1: inv blocking')
+    # Let's block for 4 minutes
+    for _ in range(2): sock.broadcast(rid_invblock)
+    sleep(20)
+
+    print('Step 2: send the flood')
+    sock.send_to_nodes(rid_flood, floodset)
+    print 'Letiting flood propagate to targetset and unreachable nodes'
+    sleep(15)
+
+    print('Step 3: send parents to each testset node')
+    for n,parent in zip(testset,rid_parents):
+        sock.send_to_nodes(parent, (n,))
+    sleep(30)
+
+    print('Step 4: Reading back to confirm')
+    sock.broadcast(rid_getdata)
+
+    print('Step 5: send the markers')
+    for n,marker in zip(testset, rid_markers):
+        sock.send_to_nodes(marker, (n,))
+    sleep(30) #
+
+    print('Step 6: read back')
+    sock.send_to_nodes(rid_invmarkers, floodset)
+    sock.broadcast(rid_getdata)
+
+    print('Waiting for logs')
     t.join()
+    pickle.dump(logs, open('./manifests/logs-%d-%s.pkl' % (manifest['time'],payload_fn),'w'), protocol=2)
