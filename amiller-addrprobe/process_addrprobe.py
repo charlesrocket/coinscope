@@ -1,4 +1,5 @@
 import logger
+import re
 import sys
 from struct import *
 import gzip
@@ -16,6 +17,7 @@ import os
 import math
 import psycopg2
 from signal import signal, SIGPIPE, SIG_DFL
+from pybloomfilter import BloomFilter
 class NoRelevantLogsException(Exception):
     pass
 
@@ -170,23 +172,68 @@ def infer_edges(ra):
                     g.add_edge(src,tgt)
     return g
 
+def infer_edges_detail(ra, bf_fn):
+    # This method is similer to infer_edges,
+    # except it records 'all the squares' for edges involving GT nodes
+
+    global g_infer
+    g_infer = nx.DiGraph()
+
+    if not ra: return
+    bf = BloomFilter(len(ra)**2, 0.0000001, bf_fn, perm=0644)
+    
+    for src in ra:
+        src_ip = src[0]
+        g_infer.add_node(src_ip)
+        for ts in ra[src]:
+            d = list(dict(sorted(ra[src][ts])).iteritems())
+            # Filter by <2h
+            for tgt,logtime in d:
+                tgt_ip = tgt[0]
+                # Filter by unique
+                if logtime - 60*(60*2-20) > ts:
+                    bf.add((src_ip, tgt_ip))
+                    #g_late.add_edge(src_ip, tgt_ip)
+                else:
+                    if len(d) == 1:
+                        g_infer.add_edge(src_ip,tgt_ip)
+    return g_infer, bf
+
+def load_gexf_bloom(gexfn):
+    g = nx.read_gexf(gexfn)
+    d,b = os.path.split(gexfn)
+    ts = re.match('addrprobe-pos-(.+)\.gexf', b)
+    bf_fn = os.path.join(d, 'addrprobe-neg-%s.gexf' % ts)
+    bf = BloomFilter.open(bf_fn)
+    return g, bf
+
+
 def do_edges(fn):
     dat = '-'.join(fn.split('.')[-2].split('-')[-4:])
     gexfn = '%s/addrprobe-%s.gexf' % (DATA_DIR, dat)
+    print gexfn
     if os.path.exists(gexfn):
         #print gexfn, "already exists, skipping"
-        return
+        #return
+        pass
 
     ra = pickle.load(open(fn))
-    g = infer_edges(ra)
-    for n in g.nodes(): 
-        g.node[n]['viz'] = {}
-        g.node[n]['viz']['size'] = (0.1 + math.log(g.degree(n)))/2
-    ts = int(dat.split('-')[-1])
-    nx.write_gexf(g, gexfn)
-    import subprocess
-    cmd = "CLASSPATH=./gephi-toolkit.jar jython gephi.py %s ./%s.gexf-test.gexf" % (gexfn, gexfn)
-    subprocess.call(cmd,shell=True)
+    bf_fn  = '%s/addrprobe-late-%s.bloom' % (DATA_DIR, dat)
+    g_infer, bf = infer_edges_detail(ra, bf_fn)
+
+    
+    gexfn_infer = '%s/addrprobe-infer-%s.gexf' % (DATA_DIR, dat)
+    nx.write_gexf(g_infer, gexfn_infer)
+
+    #g = g_infer.to_undirected()
+    #for n in g.nodes(): 
+    #    g.node[n]['viz'] = {}
+    #    g.node[n]['viz']['size'] = (0.1 + math.log(max(1,g.degree(n))))/2
+    #ts = int(dat.split('-')[-1])
+    #nx.write_gexf(g, gexfn)
+    #import subprocess
+    #cmd = "CLASSPATH=./gephi-toolkit.jar jython gephi.py %s ./%s.gexf-test.gexf" % (gexfn, gexfn)
+    #subprocess.call(cmd,shell=True)
 
 def all_edges():
     fns = sorted(glob.glob('%s/addr-relevant-*.pkl' % (DATA_DIR,)))
@@ -259,10 +306,22 @@ def main3():
     relfn = '%s/addr-relevant-%s.pkl' % (DATA_DIR, datetime.strftime(datetime.fromtimestamp(ts), '%F-%s'))
     do_edges(relfn)
 
+def main4():
+    import sys
+    if not len(sys.argv) == 2:
+        print 'usage: process_addrprobe.py <addr.pkl>'
+        sys.exit(1)
+    global DATA_DIR
+    fn = sys.argv[1]
+    DATA_DIR = os.path.dirname(fn)
+    do_edges(fn)
+
+
 if __name__ == '__main__':
     try:
         __IPYTHON__
     except NameError:
-        main2()
+        #main2()
         #main()
         #main3()
+        main4()

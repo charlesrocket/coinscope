@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
 	remote_addr.sin_family = AF_INET;
 	//if (inet_pton(AF_INET, "192.237.217.160", &remote_addr.sin_addr) != 1) {
 	//if (inet_pton(AF_INET, "151.236.218.211", &remote_addr.sin_addr) != 1) {
-	if (inet_pton(AF_INET, "178.21.118.174", &remote_addr.sin_addr) != 1) {
+	if (inet_pton(AF_INET, "54.152.175.55", &remote_addr.sin_addr) != 1) {
 		perror("inet_pton destination");
 		return EXIT_FAILURE;
 	}

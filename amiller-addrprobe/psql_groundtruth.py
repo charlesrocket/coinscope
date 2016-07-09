@@ -73,7 +73,7 @@ def stable(dirs, target):
                 reconnected.add(vi)
         v = v.difference(reconnected)
         conntime.update(p)
-                
+
         if not t: 
             t = set(v)
             s = set(v)
@@ -102,6 +102,7 @@ def peers(fn):
  inbound  | boolean                     | not null
  subver   | text                        | not null
  conntime | timestamp without time zone | not null
+ startheight | integer  | 
 """
 def submit_peerinfo(cur, fn):
     timestamp = int(re.findall('peerinfo-(\d+)\.\d+\.gz$', fn)[0])
@@ -135,8 +136,9 @@ def submit_peerinfo(cur, fn):
         inbound = d['inbound']
         subver = d['subver']
         conntime = datetime.fromtimestamp(d['conntime'])
-        data = (ts, fn, gt_ip, ip, port, inbound, subver, conntime)
-        query = 'INSERT INTO groundtruth (ts, filename, gt_ip, ip, port, inbound, subver, conntime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)'
+        startheight = int(d['startingheight'])
+        data = (ts, fn, gt_ip, ip, port, inbound, subver, conntime, startheight)
+        query = 'INSERT INTO groundtruth (ts, filename, gt_ip, ip, port, inbound, subver, conntime, startheight) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)'
         try:
             cur.execute(query, data)
         except psycopg2.IntegrityError:
@@ -178,11 +180,11 @@ def submit_gt(fns):
         count += 1
 
 
-def lookup_groundtruth(gt_ip, timestamp):
+def lookup_groundtruth(gt_ip, timestamp, left_interval='2 hours', right_interval='2 hours'):
     conn = psycopg2.connect("dbname=connector")
     timestamp = datetime.fromtimestamp(timestamp).strftime('%F %T')
     # Look up for a multi-hour range around
-    query = "SELECT ip, count(*), MIN(subver), bool_or(inbound), bool_and(inbound) FROM groundtruth WHERE gt_ip = '{gt_ip}' and ts >= (TIMESTAMP '{timestamp}' - interval '2 hours') and ts < (TIMESTAMP '{timestamp}' + interval '2 hours') GROUP BY ip"
+    query = "SELECT ip, count(*), MAX(subver), bool_or(inbound), bool_and(inbound), MIN(startheight) FROM groundtruth WHERE gt_ip = '{gt_ip}' and ts >= (TIMESTAMP '{timestamp}' - interval '%s') and ts < (TIMESTAMP '{timestamp}' + interval '%s') GROUP BY ip" % (left_interval, right_interval)
     cur = conn.cursor()
     cur.execute(query.format(gt_ip=gt_ip, timestamp=timestamp))
     return dict((d[0], d[1:]) for d in cur.fetchall())
@@ -190,3 +192,12 @@ def lookup_groundtruth(gt_ip, timestamp):
 
 # Useful command to find the dates since July 1
 # fns = within_ts('/scratch/groundtruth-soc1024/*/', totimestamp(parse_date('July 1 2015')), time.time())
+
+def main():
+    fns = within_ts('/scratch/groundtruth-soc1024/*/', totimestamp(parse_date('Sep 1 2015')), time.time())
+    submit_gt(fns)
+
+if __name__ == '__main__':
+    try: __IPYTHON__
+    except NameError:
+        main()

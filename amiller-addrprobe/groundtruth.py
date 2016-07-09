@@ -13,6 +13,7 @@ from datetime import datetime
 import cPickle as pickle
 
 DATA_DIR = 'addrprobe-BOTH'
+#DATA_DIR = 'addrprobe-data/addrprobe-2014-redoall'
 
 gt_ips = [ 
  '52.1.224.48',
@@ -102,13 +103,13 @@ def infer_edges_with_groundtruth(fn):
                 tgt_ip = tgt[0]
                 if not tgt_ip in gt_ips and not src_ip in gt_ips: continue
                 # Filter by unique
-                if len(d) == 1:
-                    if logtime - 60*(60*2-20) > ts:
-                        g_late.add_edge(src_ip, tgt_ip)
-                    else:
-                        g_infer.add_edge(src_ip,tgt_ip)
+                if logtime - 60*(60*2-20) > ts:
+                    g_late.add_edge(src_ip, tgt_ip)
                 else:
-                    g_dupl.add_edge(src_ip, tgt_ip)
+                    if len(d) == 1:
+                        g_infer.add_edge(src_ip,tgt_ip)
+                    else:
+                        g_dupl.add_edge(src_ip, tgt_ip)
     return g_infer, g_dupl, g_late
 
 def all_gt_2(fns):
@@ -291,3 +292,19 @@ experiment_files =  \
  'addrprobe-BOTH/addrprobe-2015-08-02-1438543026.gexf',
  'addrprobe-BOTH/addrprobe-2015-08-02-1438557425.gexf',
  'addrprobe-BOTH/addrprobe-2015-08-02-1438571824.gexf',]
+
+
+
+def main():
+    import sys
+    if not len(sys.argv) == 2:
+        print 'usage: groundtruth.py <addr.pkl>'
+        sys.exit(1)
+    fn = sys.argv[1]
+    all_gt_2([fn])
+
+if __name__ == '__main__':
+    try:
+        __IPYTHON__
+    except NameError:
+        main()
