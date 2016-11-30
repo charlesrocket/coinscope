@@ -26,10 +26,12 @@ const size_t MULT = 10000;
 using namespace std;
 
 string time_to_str(const time_t *t)  {
-	// return put_time(localtime(t), "%FT%T%z") !!!NOT IN G++ YET
+        ostringstream oss;
+	oss << put_time(localtime(t), "%FT%T%z");
+        return oss.str();
 	
 	/* uncomment abouve when it is available...*/
-	struct tm *tm = localtime(t);
+/*	struct tm *tm = localtime(t);
 	long offset = tm->tm_gmtoff;
 	ostringstream oss;
 	oss << (1900 + tm->tm_year) << '-' << setfill('0') << setw(2) << (tm->tm_mon + 1)
@@ -58,6 +60,7 @@ string time_to_str(const time_t *t)  {
 	oss << setfill('0') << setw(2) << hours << ':'
 	    << setfill('0') << setw(2) << minutes << ':' << setfill('0') << setw(2) << seconds;
 	return oss.str();
+        */
 }
 
 
@@ -65,7 +68,7 @@ void print_message(const uint8_t *buf, size_t len) {
 	(void) len;
 	const struct log_format *log = (const struct log_format*) buf;
 	enum log_type lt(static_cast<log_type>(log->type));
-	time_t time = ntoh(log->timestamp);
+	time_t time = ntoh(log->timestamp) / S_TO_US;
 	
 	const uint8_t *msg = log->rest;
 

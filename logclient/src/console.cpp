@@ -7,6 +7,7 @@
 #include <iostream>
 #include <utility>
 #include <iomanip>
+#include <sstream>
 
 /* standard unix libraries */
 #include <sys/types.h>
@@ -26,10 +27,13 @@
 using namespace std;
 
 string time_to_str(const time_t *t)  {
-	// return put_time(localtime(t), "%FT%T%z") !!!NOT IN G++ YET
+        
+        ostringstream oss;
+	oss << put_time(localtime(t), "%FT%T%z");
+        return oss.str();
 	
 	/* uncomment abouve when it is available...*/
-	struct tm *tm = localtime(t);
+/*	struct tm *tm = localtime(t);
 	long offset = tm->tm_gmtoff;
 	ostringstream oss;
 	oss << (1900 + tm->tm_year) << '-' << setfill('0') << setw(2) << (tm->tm_mon + 1)
@@ -58,13 +62,14 @@ string time_to_str(const time_t *t)  {
 	oss << setfill('0') << setw(2) << hours << ':'
 	    << setfill('0') << setw(2) << minutes << ':' << setfill('0') << setw(2) << seconds;
 	return oss.str();
+ */      
 }
 
 
 void print_message(read_buffer &input_buf) {
 	const struct log_format *log = (const struct log_format*) input_buf.extract_buffer().const_ptr();
 	enum log_type lt(static_cast<log_type>(log->type));
-	time_t time = ntoh(log->timestamp);
+	time_t time = ntoh(log->timestamp) / S_TO_US;
 	
 	const uint8_t *msg = log->rest;
 
