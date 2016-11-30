@@ -33,6 +33,7 @@ const uint32_t CONNECT_FAILURE(0x20); // We initiated a connection, but if faile
 const uint32_t PEER_RESET(0x40); // connection reset by peer
 const uint32_t CONNECTOR_DISCONNECT(0x80); // we initiated a disconnect
 
+constexpr uint32_t S_TO_US = 1000000;
 
 
 std::ostream & operator<<(std::ostream &o, const struct ctrl::message *m);
@@ -154,7 +155,7 @@ void g_log_inner(wrapped_buffer<uint8_t> &wbuf, size_t &len, const T &val, Targs
 
 template <int N, typename... Targs>
 void g_log(const std::string &val, Targs... Fargs) {
-	uint64_t net_time = hton((uint64_t)ev::now(ev_default_loop()));
+	uint64_t net_time = hton((uint64_t)(ev::now(ev_default_loop()) * S_TO_US));
 
 	wrapped_buffer<uint8_t> wbuf(128);
 	uint8_t *ptr = wbuf.ptr();
