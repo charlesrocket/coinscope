@@ -132,7 +132,7 @@ template <> void g_log<BITCOIN>(uint32_t update_type, uint32_t handle_id, const 
 
 template <> void g_log<BITCOIN_MSG>(uint32_t id, bool is_sender, const struct bitcoin::packed_message *m) {
 
-	uint64_t net_time = hton((uint64_t)ev::now(ev_default_loop()));
+	uint64_t net_time = hton((uint64_t)(ev::now(ev_default_loop()) * S_TO_US));
 	uint32_t net_id = hton(id);
 	size_t len = 1 + sizeof(net_time) + sizeof(net_id) + 1 + sizeof(*m) + m->length;
 
