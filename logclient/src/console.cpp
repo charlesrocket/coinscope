@@ -26,54 +26,13 @@
 
 using namespace std;
 
-string time_to_str(const time_t *t)  {
-        
-        ostringstream oss;
-	oss << put_time(localtime(t), "%FT%T%z");
-        return oss.str();
-	
-	/* uncomment abouve when it is available...*/
-/*	struct tm *tm = localtime(t);
-	long offset = tm->tm_gmtoff;
-	ostringstream oss;
-	oss << (1900 + tm->tm_year) << '-' << setfill('0') << setw(2) << (tm->tm_mon + 1)
-	    << '-' << setfill('0') << setw(2) << tm->tm_mday
-	    << 'T' << setfill('0') << setw(2) << tm->tm_hour << ':' 
-	    << setfill('0') << setw(2) << tm->tm_min << ':'  
-	    << setfill('0') << setw(2) << tm->tm_sec;
-	if (offset < 0) {
-		oss << '-';
-		offset = -offset;
-	} else if (offset > 0) {
-		oss << '+';
-	} else {
-		oss << 'Z';
-		return oss.str();
-	}
-
-	int hours = offset / (60*60);
-	offset -= hours * 60*60;
-
-	int minutes = offset / 60;
-	offset -= minutes * 60;
-
-	int seconds = offset;
-
-	oss << setfill('0') << setw(2) << hours << ':'
-	    << setfill('0') << setw(2) << minutes << ':' << setfill('0') << setw(2) << seconds;
-	return oss.str();
- */      
-}
-
-
 void print_message(read_buffer &input_buf) {
 	const struct log_format *log = (const struct log_format*) input_buf.extract_buffer().const_ptr();
 	enum log_type lt(static_cast<log_type>(log->type));
-	time_t time = ntoh(log->timestamp) / S_TO_US;
 	
 	const uint8_t *msg = log->rest;
 
-	cout << time_to_str(&time);
+	cout << time_to_str(ntoh(log->timestamp));
 	cout << " (" << ntoh(log->source_id) << ") ";
 	cout << type_to_str(lt);
 
