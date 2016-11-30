@@ -1,4 +1,5 @@
 from datetime import *
+from time import time
 
 def inet_ntoa(num):
     # python version wants the num to be packed
@@ -9,6 +10,8 @@ def inet_aton(ip):
     return (i[3] << 24) | (i[2] << 16) | (i[1] << 8) | i[0]
 
 def unix2str(tstamp):
+    if tstamp > time():
+        tstamp = tstamp / 1E6
     dt = datetime.fromtimestamp(tstamp)
     return dt.isoformat(' ')
     
