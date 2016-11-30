@@ -249,3 +249,4 @@ string type_to_str(enum log_type type) {
 		break;
 	};
 }
+

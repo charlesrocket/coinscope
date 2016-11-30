@@ -1,9 +1,13 @@
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
 #include <deque>
 #include <sstream>
+#include <string>
 
 #include "ev++.h"
 
@@ -195,5 +199,22 @@ template <int N> void g_log(uint32_t update_type, uint32_t handle_id, const stru
                             const struct sockaddr_in &local, const char * text, uint32_t text_len);
 template <> void g_log<BITCOIN>(uint32_t update_type, uint32_t handle_id, const struct sockaddr_in &remote, 
                                 const struct sockaddr_in &local, const char * text, uint32_t text_len);
+
+inline std::string time_to_str(uint64_t timestamp) {
+    uint64_t cur_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    uint64_t us = 0;
+
+    if (timestamp > cur_time) { //Microsecond timestamp
+        us = timestamp % S_TO_US;
+        timestamp /= S_TO_US;
+    }
+
+    const time_t time = timestamp;
+
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&time), "%F %T") << " " << us << "us";
+    return oss.str();
+}
 
 #endif
