@@ -76,13 +76,13 @@ int main(int argc, char *argv[]) {
 	struct sockaddr_in remote_addr;
 	bzero(&remote_addr, sizeof(remote_addr));
 
-    struct hostent* he = gethostbyname((const char*)cfg->lookup("connector.bitcoin.seed"));
-    if (!he) {
-        perror("gethostbyname");
-        return EXIT_FAILURE;
-    }
-    memcpy(&remote_addr.sin_addr, he->h_addr_list[0], he->h_length);
-    remote_addr.sin_family = AF_INET;
+        struct hostent* he = gethostbyname((const char*)cfg->lookup("connector.bitcoin.seed"));
+    	if (!he) {
+        	perror("gethostbyname");
+        	return EXIT_FAILURE;
+    	}
+    	memcpy(&remote_addr.sin_addr, he->h_addr_list[0], he->h_length);
+    	remote_addr.sin_family = AF_INET;
 
 
 	struct sockaddr_in local_addr;
