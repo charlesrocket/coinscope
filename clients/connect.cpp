@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	remote_addr.sin_port = hton(static_cast<uint16_t>(8333));
+	remote_addr.sin_port = hton(static_cast<uint16_t>(int(cfg->lookup("connector.bitcoin.port"))));
 	local_addr.sin_port = hton(static_cast<uint16_t>(0xdead));
 
 	connect_msg message(&remote_addr, &local_addr);
