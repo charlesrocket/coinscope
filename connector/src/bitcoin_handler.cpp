@@ -511,6 +511,8 @@ void handler::do_read(ev::io &watcher, int /* revents */) {
 			case RECV_VERSION_INIT: // we initiated handshake, we expect ack
 				// next message should be zero length header with verack command
 				handle_message_recv(msg);
+				// Add missing verack
+				append_for_write(get_message("verack"));
 				state = (state & SEND_MASK) | RECV_HEADER;
 				read_queue.cursor(0);
 				read_queue.to_read(sizeof(struct packed_message));
