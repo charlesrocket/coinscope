@@ -22,8 +22,8 @@ with io.open("/coinscope/netmine.cfg", encoding='utf-8') as f:
     cfg = libconf.load(f)
     bitcoin_control = cfg.get("connector").get("control_path")
     logger_root = cfg.get("logger").get("root")
-    log_net = logger_root + "clients/bitcoin"
-    log_bitcoin_msg = logger_root + "clients/bitcoin_msg"
+    log_net = logger_root + cfg.get("logger").get("clients").get("bitcoin")
+    log_bitcoin_msg = logger_root + cfg.get("logger").get("clients").get("bitcoin_msg")
     
 
 parser = argparse.ArgumentParser()
