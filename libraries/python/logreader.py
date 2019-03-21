@@ -1,33 +1,37 @@
-#!/usr/bin/env python
+import socket
+import io
+import libconf
+from lib.contools import read_logs
+from sys import argv
 
-import sys
-from struct import *
+with io.open("/coinscope/netmine.cfg", encoding='utf-8') as f:
+    cfg = libconf.load(f)
+    logger_root = cfg.get("logger").get("root")
+    log_all = log_net = logger_root + cfg.get("logger").get("clients").get("all")
+    log_net = logger_root + cfg.get("logger").get("clients").get("bitcoin")
+    log_bitcoin_msg = logger_root + cfg.get("logger").get("clients").get("bitcoin_msg")
 
-sys.path.append('lib')
 
-import logger;
+targets = ['all', 'net', 'bitcoin_msg']
 
-# This just reads a log file (verbatim.out) from the current working
-# directory and prints it out. It's meant to both test and demonstrate
-# use of the logger.py classes
+if 1 < len(argv) < 3:
+    target_log = argv[1]
 
-# Set the log type you are interested in here 
-interests = ~(logger.log_types.BITCOIN_MSG | logger.log_types.BITCOIN)
+    if target_log == "all":
+        target_log = log_all
+    elif target_log == "net":
+        target_log = log_net
+    elif target_log == "bitcoin_msg":
+        target_log = log_bitcoin_msg
+    else:
+        raise Exception("Invalid target. Available targets: " + str(targets))
 
-for filename in sys.argv[1:]:
-    fp = open(filename, 'rb')
+    log_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
+    log_sock.connect(target_log)
 
-    while(True):
-        length = fp.read(4)
-        if length is None or len(length) < 4:
-            break
-        length, = unpack('>I', length)
-        record = fp.read(length)
-        source_id, log_type, timestamp, rest = logger.log.deserialize_parts(record)
-        log = logger.type_to_obj[log_type].deserialize(source_id, timestamp, rest)
+    for log in read_logs(log_sock):
+        print log
 
-        if (log_type & interests) :# and log.rest == "Initiating GETADDR probe":
-            print log
 
-    fp.close()
-
+else:
+    raise Exception("No target provided. Available targets: " + str(targets))
