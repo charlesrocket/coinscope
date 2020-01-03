@@ -1,5 +1,5 @@
-CC=gcc-5
-CXX=g++-5
+CC=gcc
+CXX=g++
 #CXX=clang++
 CFLAGS=-Wall -Wextra -Wcast-align -Iincludes -I../shared/includes -ggdb -O2
 CXXFLAGS=-Wall -Wextra -Wcast-align -std=c++11 -Weffc++ -Iincludes -I../shared/includes -ggdb -O2
