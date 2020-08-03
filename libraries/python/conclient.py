@@ -57,7 +57,7 @@ elif args.test == "getaddr":
     logsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
     logsock.connect(log_bitcoin_msg)
 
-    getaddr = pack('<I12sII', 0xD9B4BEF9, "getaddr", 0, 0xE2E0F65D)
+    getaddr = pack('<I12sII', 0x046BCEB5, "getaddr", 0, 0xE2E0F65D)
     msg = bitcoin_msg(getaddr)
 
     ser = msg.serialize()
