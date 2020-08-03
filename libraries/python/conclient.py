@@ -40,7 +40,7 @@ if args.test == "connect":
     logsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
     logsock.connect(log_net)
 
-    msg = connect_msg('127.0.0.1', 8333, '0.0.0.0', 0)
+    msg = connect_msg('127.0.0.1', 9937, '0.0.0.0', 0)
     ser = msg.serialize()
     do_send(sock, ser)
 
